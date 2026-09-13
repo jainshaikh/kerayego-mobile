@@ -47,7 +47,6 @@ export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, ava
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedPickupStopId, setSelectedPickupStopId] = useState<string | null>(null);
   const [selectedDropoffStopId, setSelectedDropoffStopId] = useState<string | null>(null);
-  const [useCustomPickup, setUseCustomPickup] = useState(false);
 
   const {
     control,
@@ -65,34 +64,25 @@ export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, ava
   const maxSeats = Math.max(1, availableSeats);
   const pickupStops = stops.filter((s) => s.type === 'PICKUP');
   const dropoffStops = stops.filter((s) => s.type === 'DROPOFF');
-  const showCustomPickupInput = pickupStops.length === 0 || useCustomPickup;
+  const canSubmitStops = pickupStops.length > 0 && dropoffStops.length > 0;
+  const stopsSelected = !!selectedPickupStopId && !!selectedDropoffStopId;
 
   const onSubmit = async (values: TripInquiryFormValues) => {
     setSubmitError(null);
-    const pickupLabel = pickupStops.find((s) => s.id === selectedPickupStopId)?.label;
-    const dropoffLabel = dropoffStops.find((s) => s.id === selectedDropoffStopId)?.label;
-    const pickupText = pickupLabel || (values.pickupNote || '').trim() || undefined;
-
-    let pickupNote: string | undefined;
-    if (pickupText && dropoffLabel) {
-      pickupNote = `Pickup: ${pickupText} · Drop-off: ${dropoffLabel}`;
-    } else if (pickupText) {
-      pickupNote = pickupText;
-    } else if (dropoffLabel) {
-      pickupNote = `Drop-off: ${dropoffLabel}`;
-    }
+    if (!selectedPickupStopId || !selectedDropoffStopId) return;
 
     try {
       await createInquiry.mutateAsync({
         tripId,
         requestedSeats: values.requestedSeats,
-        pickupNote,
+        pickupStopId: selectedPickupStopId,
+        dropoffStopId: selectedDropoffStopId,
+        pickupNote: values.pickupNote || undefined,
         message: values.message || undefined,
       });
       reset({ requestedSeats: 1 });
       setSelectedPickupStopId(null);
       setSelectedDropoffStopId(null);
-      setUseCustomPickup(false);
       onClose();
       router.push('/account/trip-requests');
     } catch (error) {
@@ -169,33 +159,33 @@ export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, ava
               </AppText>
             ) : null}
 
-            {pickupStops.length > 0 ? (
-              <View style={{ marginBottom: spacing.md }}>
-                <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-                  Pickup point
-                </AppText>
+            <View style={{ marginBottom: spacing.md }}>
+              <AppText variant="label" style={{ marginBottom: spacing.xs }}>
+                Pickup point
+              </AppText>
+              {pickupStops.length > 0 ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                   {pickupStops.map((stop) => (
                     <Chip
                       key={stop.id}
                       label={stop.label}
-                      active={!useCustomPickup && selectedPickupStopId === stop.id}
-                      onPress={() => {
-                        setUseCustomPickup(false);
-                        setSelectedPickupStopId(stop.id);
-                      }}
+                      active={selectedPickupStopId === stop.id}
+                      onPress={() => setSelectedPickupStopId((current) => (current === stop.id ? null : stop.id))}
                     />
                   ))}
-                  <Chip label="Other" active={useCustomPickup} onPress={() => { setUseCustomPickup(true); setSelectedPickupStopId(null); }} />
                 </View>
-              </View>
-            ) : null}
-
-            {dropoffStops.length > 0 ? (
-              <View style={{ marginBottom: spacing.md }}>
-                <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-                  Drop-off point
+              ) : (
+                <AppText color={colors.danger} variant="caption">
+                  This trip has no valid pickup points — contact the driver.
                 </AppText>
+              )}
+            </View>
+
+            <View style={{ marginBottom: spacing.md }}>
+              <AppText variant="label" style={{ marginBottom: spacing.xs }}>
+                Drop-off point
+              </AppText>
+              {dropoffStops.length > 0 ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                   {dropoffStops.map((stop) => (
                     <Chip
@@ -206,24 +196,26 @@ export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, ava
                     />
                   ))}
                 </View>
-              </View>
-            ) : null}
+              ) : (
+                <AppText color={colors.danger} variant="caption">
+                  This trip has no valid drop-off points — contact the driver.
+                </AppText>
+              )}
+            </View>
 
-            {showCustomPickupInput ? (
-              <Controller
-                control={control}
-                name="pickupNote"
-                render={({ field }) => (
-                  <AppInput
-                    label="Pickup note (optional)"
-                    placeholder="e.g. Near the mosque, not the main gate"
-                    value={field.value}
-                    onChangeText={field.onChange}
-                    error={errors.pickupNote?.message}
-                  />
-                )}
-              />
-            ) : null}
+            <Controller
+              control={control}
+              name="pickupNote"
+              render={({ field }) => (
+                <AppInput
+                  label="Pickup note (optional)"
+                  placeholder="e.g. Near the mosque, not the main gate"
+                  value={field.value}
+                  onChangeText={field.onChange}
+                  error={errors.pickupNote?.message}
+                />
+              )}
+            />
             <Controller
               control={control}
               name="message"
@@ -253,7 +245,12 @@ export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, ava
               <AppButton title="Cancel" variant="secondary" onPress={onClose} />
             </View>
             <View style={{ flex: 2 }}>
-              <AppButton title="Send request" loading={createInquiry.isPending} onPress={handleSubmit(onSubmit)} />
+              <AppButton
+                title="Send request"
+                loading={createInquiry.isPending}
+                disabled={!canSubmitStops || !stopsSelected}
+                onPress={handleSubmit(onSubmit)}
+              />
             </View>
           </View>
         </View>

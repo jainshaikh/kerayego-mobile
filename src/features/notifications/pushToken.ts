@@ -39,6 +39,20 @@ export async function registerPushToken(): Promise<void> {
   }
 }
 
+// Play Services can reissue a device's FCM token at any point during an
+// app's lifetime, not just on reinstall — without this, a rotated token
+// leaves the old (now-dead) one sitting in the backend forever and no push
+// ever arrives again until the next login. Subscribe once while a session
+// is active; caller owns tearing it down (e.g. on logout).
+export function subscribePushTokenRefresh(): () => void {
+  const subscription = Notifications.addPushTokenListener((token) => {
+    deviceTokensApi
+      .register(token.data, Platform.OS === 'ios' ? 'IOS' : 'ANDROID')
+      .catch((err) => console.warn('[pushToken] failed to re-register refreshed push token:', err));
+  });
+  return () => subscription.remove();
+}
+
 // Called before clearing the local session on logout — the backend call
 // needs to happen while the about-to-expire access token is still valid, so
 // this must run before, not after, the session is actually cleared.

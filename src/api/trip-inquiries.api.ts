@@ -38,6 +38,11 @@ export interface TripInquiry {
   pickupConfirmedAt: string | null;
   pickupSource: PickupSource | null;
   droppedOffAt: string | null;
+  // Structured stop this inquiry was made against — the source of truth for
+  // rider geofence checks (see trip-request/[id].tsx). Null only for legacy
+  // inquiries created before stops were required.
+  pickupStop: { id: string; label: string; lat: number; lng: number } | null;
+  dropoffStop: { id: string; label: string; lat: number; lng: number } | null;
   createdAt: string;
   updatedAt: string;
   user: TripInquiryUser;
@@ -47,6 +52,8 @@ export interface TripInquiry {
 export interface CreateTripInquiryPayload {
   tripId: string;
   requestedSeats: number;
+  pickupStopId: string;
+  dropoffStopId: string;
   pickupNote?: string;
   message?: string;
 }
@@ -54,6 +61,24 @@ export interface CreateTripInquiryPayload {
 export interface UpdateTripInquiryStatusPayload {
   newStatus: TripInquiryStatus;
   note?: string;
+}
+
+// Mirrors the backend's ChatMessage prisma model exactly (prisma/schema.prisma) —
+// this same shape is both what GET /trip-inquiries/:id/messages returns (below)
+// and what the live-ride socket's chat events carry (see features/liveRide/socket.ts).
+export interface ChatMessage {
+  id: string;
+  tripInquiryId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  deliveredAt: string | null;
+  readAt: string | null;
+}
+
+export interface ChatMessagesResult {
+  data: ChatMessage[];
+  meta: { limit: number; nextCursor: string | null };
 }
 
 export const tripInquiriesApi = {
@@ -91,5 +116,17 @@ export const tripInquiriesApi = {
   getInboxCounts: async (): Promise<{ pending: number }> => {
     const res = await apiClient.get<ApiResponse<{ pending: number }>>('/my/trip-inquiries/counts');
     return res.data.data;
+  },
+
+  // Chat history catch-up (reconnect / initial sheet open) — the socket's
+  // rooms only ever deliver messages sent while a socket is connected and
+  // joined, so this is the reliable source for everything sent before that.
+  // `after` (an ISO-8601 createdAt cursor) fetches only messages strictly
+  // newer than it — see RideRealtimeGateway/TripInquiriesService.getMessages.
+  getMessages: async (tripInquiryId: string, after?: string): Promise<ChatMessagesResult> => {
+    const res = await apiClient.get<ApiResponse<ChatMessage[]>>(`/trip-inquiries/${tripInquiryId}/messages`, {
+      params: after ? { after } : undefined,
+    });
+    return { data: res.data.data, meta: res.data.meta as unknown as ChatMessagesResult['meta'] };
   },
 };

@@ -133,3 +133,17 @@ export function useEndTrip(id: string) {
     },
   });
 }
+
+// Polls for the current user's one live-ride "lock" (driver or rider on a
+// trip that's currently running). `enabled` follows the same convention as
+// useTripManifest above — pass false (e.g. while not authenticated) to skip
+// the query and its polling entirely rather than reading auth state in here.
+// 20s matches useTripInquiry's existing day-of-status polling cadence.
+export function useMyActiveRide(enabled = true) {
+  return useQuery({
+    queryKey: ['myActiveRide'],
+    queryFn: () => tripsApi.getMyActiveRide(),
+    enabled,
+    refetchInterval: enabled ? 20_000 : false,
+  });
+}

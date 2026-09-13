@@ -39,10 +39,16 @@ export interface TripRouteGroup {
   nextDepartureAt: string | null;
 }
 
-// The day-of manifest is the confirmed rider list, not a per-stop view —
-// TripInquiry has no reference to a specific TripStop (riders are matched to
-// a stop by free-text pickupNote only), so there's no structured way to
-// group them by stop.
+// Each rider now carries its resolved pickup/dropoff TripStop (structured, not
+// the free-text pickupNote), so the manifest can be grouped/ordered by stop —
+// see routeStops below, which lists every stop in visit order.
+export interface ManifestStopRef {
+  id: string;
+  label: string;
+  lat: number;
+  lng: number;
+}
+
 export interface ManifestRider {
   id: string; // tripInquiryId
   requestedSeats: number;
@@ -50,12 +56,24 @@ export interface ManifestRider {
   pickupConfirmedAt: string | null;
   pickupSource: PickupSource | null;
   droppedOffAt: string | null;
+  pickupStop: ManifestStopRef | null;
+  dropoffStop: ManifestStopRef | null;
   user: { id: string; name: string; phone: string | null };
+}
+
+// All PICKUP stops precede all DROPOFF stops, in the order the driver should visit them.
+export interface ManifestRouteStop {
+  id: string;
+  type: 'PICKUP' | 'DROPOFF';
+  label: string;
+  lat: number;
+  lng: number;
 }
 
 export interface TripManifest {
   trip: TripDetail;
   riders: ManifestRider[];
+  routeStops: ManifestRouteStop[];
 }
 
 // `id` must be a client-generated UUID kept stable across retries of the same
@@ -79,6 +97,14 @@ export interface TripEvent {
   occurredAt: string;
   syncedAt: string;
 }
+
+// The current user's one live-ride "lock", if any — null means neither
+// driving nor riding an active trip right now. Drives the app-wide redirect
+// in _layout.tsx that forces a reopen back onto the locked ride screen.
+export type MyActiveRide =
+  | { role: 'driver'; tripId: string }
+  | { role: 'rider'; tripId: string; tripInquiryId: string }
+  | null;
 
 // NOTE: despite the Swagger summary text saying trips are "held for admin review",
 // the actual service creates them with status ACTIVE immediately (Prisma default) —
@@ -160,6 +186,11 @@ export const tripsApi = {
 
   endTrip: async (id: string) => {
     const res = await apiClient.post<ApiResponse<TripDetail>>(`/my/trips/${id}/end`);
+    return res.data.data;
+  },
+
+  getMyActiveRide: async (): Promise<MyActiveRide> => {
+    const res = await apiClient.get<ApiResponse<MyActiveRide>>('/my/active-ride');
     return res.data.data;
   },
 };
