@@ -264,7 +264,7 @@ export function useRideSocket() {
     );
   };
 
-  // Unlike emitLocation, the ack here is NOT swallowed — the caller (ChatSheet)
+  // Unlike emitLocation, the ack here is NOT swallowed — the caller (ChatPanel)
   // needs the real result to reconcile its optimistic local message (replace
   // the optimistic entry with the server-confirmed one, or surface a failure).
   const sendMessage = (payload: SendMessagePayload): Promise<SendMessageResult> => {

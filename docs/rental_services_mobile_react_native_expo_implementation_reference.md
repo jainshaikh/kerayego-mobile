@@ -328,20 +328,20 @@ The mobile agent should assume development builds are the normal workflow.
 
 The approved baseline for the current implementation is:
 
-| Component | Project Baseline |
-|---|---|
-| Expo | SDK 57 |
-| React Native | 0.86 |
-| React | 19.2.3 |
-| Node.js | 24 LTS preferred |
-| Language | TypeScript |
-| Routing | Expo Router |
-| Server state | TanStack Query |
-| Forms | React Hook Form |
-| Validation | Zod |
-| Backend | Existing NestJS |
-| Database | Existing PostgreSQL |
-| ORM | Existing Prisma |
+| Component    | Project Baseline    |
+| ------------ | ------------------- |
+| Expo         | SDK 57              |
+| React Native | 0.86                |
+| React        | 19.2.3              |
+| Node.js      | 24 LTS preferred    |
+| Language     | TypeScript          |
+| Routing      | Expo Router         |
+| Server state | TanStack Query      |
+| Forms        | React Hook Form     |
+| Validation   | Zod                 |
+| Backend      | Existing NestJS     |
+| Database     | Existing PostgreSQL |
+| ORM          | Existing Prisma     |
 
 Important:
 
@@ -1652,13 +1652,13 @@ Do not mix request stacks randomly.
 The approved initial creation direction is:
 
 ```bash
-npx create-expo-app@latest rental-mobile --template default@sdk-57
+npx create-expo-app@latest kerayego-mobile --template default@sdk-57
 ```
 
 Then:
 
 ```bash
-cd rental-mobile
+cd kerayego-mobile
 ```
 
 Add the development client:

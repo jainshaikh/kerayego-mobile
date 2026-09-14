@@ -1,4 +1,4 @@
-// Mirrors backend enums exactly — keep in sync with rental-marketplace-backend/prisma/schema.prisma
+// Mirrors backend enums exactly — keep in sync with kerayego-backend/prisma/schema.prisma
 
 export enum Role {
   USER = 'USER',
@@ -121,9 +121,19 @@ export enum TripInquiryStatus {
 // (amber=warning, blue=info, emerald=success, red=danger, slate=neutral,
 // violet=accent, teal=complete) so status colors read identically on both clients.
 
-export type StatusTone = 'neutral' | 'info' | 'success' | 'danger' | 'warning' | 'accent' | 'complete';
+export type StatusTone =
+  | 'neutral'
+  | 'info'
+  | 'success'
+  | 'danger'
+  | 'warning'
+  | 'accent'
+  | 'complete';
 
-export const bookingStatusMeta: Record<BookingRequestStatus, { label: string; tone: StatusTone }> = {
+export const bookingStatusMeta: Record<
+  BookingRequestStatus,
+  { label: string; tone: StatusTone }
+> = {
   [BookingRequestStatus.PENDING]: { label: 'Pending', tone: 'warning' },
   [BookingRequestStatus.CONTACTED]: { label: 'Contacted', tone: 'accent' },
   [BookingRequestStatus.ACCEPTED]: { label: 'Accepted', tone: 'success' },
@@ -132,7 +142,10 @@ export const bookingStatusMeta: Record<BookingRequestStatus, { label: string; to
   [BookingRequestStatus.COMPLETED]: { label: 'Completed', tone: 'complete' },
 };
 
-export const vehicleStatusMeta: Record<VehicleStatus, { label: string; tone: StatusTone }> = {
+export const vehicleStatusMeta: Record<
+  VehicleStatus,
+  { label: string; tone: StatusTone }
+> = {
   [VehicleStatus.DRAFT]: { label: 'Draft', tone: 'neutral' },
   [VehicleStatus.PENDING_REVIEW]: { label: 'Under Review', tone: 'info' },
   [VehicleStatus.APPROVED]: { label: 'Approved', tone: 'success' },
@@ -144,11 +157,18 @@ export const vehicleStatusMeta: Record<VehicleStatus, { label: string; tone: Sta
 // so the mobile UI only ever shows actions the backend will actually accept.
 export const BOOKING_TRANSITIONS: Record<
   BookingRequestStatus,
-  { allowedBy: ('USER' | 'PROVIDER' | 'ADMIN')[]; nextStates: BookingRequestStatus[] }
+  {
+    allowedBy: ('USER' | 'PROVIDER' | 'ADMIN')[];
+    nextStates: BookingRequestStatus[];
+  }
 > = {
   [BookingRequestStatus.PENDING]: {
     allowedBy: ['USER', 'PROVIDER', 'ADMIN'],
-    nextStates: [BookingRequestStatus.CONTACTED, BookingRequestStatus.REJECTED, BookingRequestStatus.CANCELLED],
+    nextStates: [
+      BookingRequestStatus.CONTACTED,
+      BookingRequestStatus.REJECTED,
+      BookingRequestStatus.CANCELLED,
+    ],
   },
   [BookingRequestStatus.CONTACTED]: {
     allowedBy: ['PROVIDER', 'ADMIN'],
@@ -156,7 +176,10 @@ export const BOOKING_TRANSITIONS: Record<
   },
   [BookingRequestStatus.ACCEPTED]: {
     allowedBy: ['ADMIN'],
-    nextStates: [BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
+    nextStates: [
+      BookingRequestStatus.COMPLETED,
+      BookingRequestStatus.CANCELLED,
+    ],
   },
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.CANCELLED]: { allowedBy: [], nextStates: [] },
@@ -164,12 +187,17 @@ export const BOOKING_TRANSITIONS: Record<
 };
 
 /** Actions a USER may take from a given booking status (mirrors backend, minus ADMIN-only moves). */
-export function userBookingActions(status: BookingRequestStatus): BookingRequestStatus[] {
+export function userBookingActions(
+  status: BookingRequestStatus,
+): BookingRequestStatus[] {
   if (status !== BookingRequestStatus.PENDING) return [];
   return [BookingRequestStatus.CANCELLED];
 }
 
-export const tripStatusMeta: Record<TripStatus, { label: string; tone: StatusTone }> = {
+export const tripStatusMeta: Record<
+  TripStatus,
+  { label: string; tone: StatusTone }
+> = {
   [TripStatus.PENDING_REVIEW]: { label: 'Under Review', tone: 'info' },
   [TripStatus.ACTIVE]: { label: 'Active', tone: 'success' },
   [TripStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
@@ -179,7 +207,10 @@ export const tripStatusMeta: Record<TripStatus, { label: string; tone: StatusTon
   [TripStatus.SUSPENDED]: { label: 'Suspended', tone: 'danger' },
 };
 
-export const userVehicleStatusMeta: Record<UserVehicleStatus, { label: string; tone: StatusTone }> = {
+export const userVehicleStatusMeta: Record<
+  UserVehicleStatus,
+  { label: string; tone: StatusTone }
+> = {
   [UserVehicleStatus.PENDING_REVIEW]: { label: 'Under Review', tone: 'info' },
   [UserVehicleStatus.APPROVED]: { label: 'Approved', tone: 'success' },
   [UserVehicleStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
@@ -187,13 +218,18 @@ export const userVehicleStatusMeta: Record<UserVehicleStatus, { label: string; t
 };
 
 /** A trip can only be edited/cancelled by its poster while it's still ACTIVE (mirrors backend). */
-export function tripPosterActions(status: TripStatus): ('edit' | 'cancel' | 'start' | 'end')[] {
+export function tripPosterActions(
+  status: TripStatus,
+): ('edit' | 'cancel' | 'start' | 'end')[] {
   if (status === TripStatus.ACTIVE) return ['edit', 'cancel', 'start'];
   if (status === TripStatus.IN_PROGRESS) return ['end'];
   return [];
 }
 
-export const tripInquiryStatusMeta: Record<TripInquiryStatus, { label: string; tone: StatusTone }> = {
+export const tripInquiryStatusMeta: Record<
+  TripInquiryStatus,
+  { label: string; tone: StatusTone }
+> = {
   [TripInquiryStatus.PENDING]: { label: 'Awaiting response', tone: 'warning' },
   [TripInquiryStatus.ACCEPTED]: { label: 'Accepted', tone: 'success' },
   [TripInquiryStatus.REJECTED]: { label: 'Not accepted', tone: 'danger' },
@@ -206,14 +242,21 @@ export const tripInquiryStatusMeta: Record<TripInquiryStatus, { label: string; t
 // backend's TripInquiriesService authorization exactly. A confirmed
 // (ACCEPTED) seat can still be cancelled by the rider — it frees the seat and
 // notifies the poster; the backend blocks it once the trip has departed.
-export function tripInquiryRiderActions(status: TripInquiryStatus): TripInquiryStatus[] {
-  if (status === TripInquiryStatus.PENDING || status === TripInquiryStatus.ACCEPTED) {
+export function tripInquiryRiderActions(
+  status: TripInquiryStatus,
+): TripInquiryStatus[] {
+  if (
+    status === TripInquiryStatus.PENDING ||
+    status === TripInquiryStatus.ACCEPTED
+  ) {
     return [TripInquiryStatus.CANCELLED];
   }
   return [];
 }
 
-export function tripInquiryPosterActions(status: TripInquiryStatus): TripInquiryStatus[] {
+export function tripInquiryPosterActions(
+  status: TripInquiryStatus,
+): TripInquiryStatus[] {
   return status === TripInquiryStatus.PENDING
     ? [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED]
     : [];

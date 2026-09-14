@@ -78,7 +78,7 @@ export interface LoginResult {
   accessToken: string;
   user: AuthUser;
   // Only present for mobile clients (x-client-type: mobile header) — web relies on the
-  // httpOnly cookie instead. See rental-marketplace-backend auth.controller.ts.
+  // httpOnly cookie instead. See kerayego-backend auth.controller.ts.
   refreshToken?: string;
 }
 
@@ -151,7 +151,12 @@ export interface PublicProviderCard {
   logoUrl: string | null;
   businessDescription: string | null;
   isFeatured: boolean;
-  showrooms: { city: string; area: string | null; mapLat: number | null; mapLng: number | null }[];
+  showrooms: {
+    city: string;
+    area: string | null;
+    mapLat: number | null;
+    mapLng: number | null;
+  }[];
   _count: { vehicles: number };
   // Only present when the request included lat/lng (nearby search) — computed
   // from the provider's first showroom (by createdAt), mirrors web exactly.
@@ -226,7 +231,13 @@ export interface ProviderVehicle {
   showroomId: string | null;
   images: VehicleImage[];
   features: VehicleFeature[];
-  showroom: { id: string; name: string; city: string; area: string | null; contactNumber: string } | null;
+  showroom: {
+    id: string;
+    name: string;
+    city: string;
+    area: string | null;
+    contactNumber: string;
+  } | null;
   _count?: { bookingRequests: number };
   createdAt: string;
   updatedAt: string;
@@ -249,7 +260,12 @@ export interface VehicleCard {
   locationText: string | null;
   images: { url: string; altText: string | null; sortOrder: number }[];
   providerProfile: { businessName: string; slug: string };
-  showroom: { city: string; area: string | null; mapLat: number | null; mapLng: number | null } | null;
+  showroom: {
+    city: string;
+    area: string | null;
+    mapLat: number | null;
+    mapLng: number | null;
+  } | null;
   // Only present when the request included lat/lng (nearby search).
   distanceKm?: number;
 }
@@ -278,7 +294,14 @@ export interface VehicleDetail {
   status: VehicleStatus;
   viewCount: number;
   inquiryCount: number;
-  images: { id: string; url: string; altText: string | null; sortOrder: number; width: number | null; height: number | null }[];
+  images: {
+    id: string;
+    url: string;
+    altText: string | null;
+    sortOrder: number;
+    width: number | null;
+    height: number | null;
+  }[];
   features: VehicleFeature[];
   providerProfile: {
     id: string;
@@ -353,7 +376,12 @@ export interface UploadResult {
 
 export interface UserVehicleDocument {
   id: string;
-  documentType: 'ID_DOCUMENT' | 'ID_DOCUMENT_FRONT' | 'ID_DOCUMENT_BACK' | 'DRIVING_LICENSE' | 'VEHICLE_REGISTRATION';
+  documentType:
+    | 'ID_DOCUMENT'
+    | 'ID_DOCUMENT_FRONT'
+    | 'ID_DOCUMENT_BACK'
+    | 'DRIVING_LICENSE'
+    | 'VEHICLE_REGISTRATION';
   fileUrl: string;
   status: string;
   rejectionReason: string | null;

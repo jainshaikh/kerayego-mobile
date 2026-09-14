@@ -1,6 +1,14 @@
-import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import { API_BASE_URL, REQUEST_TIMEOUT_MS } from '../constants/config';
-import { clearAllAuthStorage, getRefreshToken, setRefreshToken } from '../storage/secure-storage';
+import {
+  clearAllAuthStorage,
+  getRefreshToken,
+  setRefreshToken,
+} from '../storage/secure-storage';
 import type { ApiResponse, RefreshResult } from '../types/api.types';
 
 // Access token lives in memory only — never persisted, so it disappears on app kill.
@@ -32,7 +40,7 @@ const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
     // Tells the backend to also return the refresh token in the response body
     // (httpOnly cookies aren't usable the way they are in a browser). See
-    // rental-marketplace-backend auth.controller.ts `isMobileClient`.
+    // kerayego-backend auth.controller.ts `isMobileClient`.
     'X-Client-Type': 'mobile',
   },
 });
@@ -68,9 +76,12 @@ async function performRefresh(): Promise<string | null> {
   const storedRefreshToken = await getRefreshToken();
   if (!storedRefreshToken) return null;
 
-  const response = await apiClient.post<ApiResponse<RefreshResult>>('/auth/refresh', {
-    refreshToken: storedRefreshToken,
-  });
+  const response = await apiClient.post<ApiResponse<RefreshResult>>(
+    '/auth/refresh',
+    {
+      refreshToken: storedRefreshToken,
+    },
+  );
 
   const result = response.data.data;
   setAccessToken(result.accessToken);
@@ -83,12 +94,20 @@ async function performRefresh(): Promise<string | null> {
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    const originalRequest = error.config as
+      | (InternalAxiosRequestConfig & { _retry?: boolean })
+      | undefined;
 
     const isAuthRoute =
-      originalRequest?.url?.includes('/auth/refresh') || originalRequest?.url?.includes('/auth/login');
+      originalRequest?.url?.includes('/auth/refresh') ||
+      originalRequest?.url?.includes('/auth/login');
 
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthRoute) {
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !isAuthRoute
+    ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           subscribeToRefresh((newToken) => {

@@ -1,7 +1,7 @@
 module.exports = {
   expo: {
     name: 'KerayeGo',
-    slug: 'rental-mobile',
+    slug: 'kerayego-mobile',
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/images/icon.png',
@@ -49,7 +49,8 @@ module.exports = {
       [
         'expo-location',
         {
-          locationWhenInUsePermission: 'Allow $(PRODUCT_NAME) to use your location to show nearby vehicles and carpools.',
+          locationWhenInUsePermission:
+            'Allow $(PRODUCT_NAME) to use your location to show nearby vehicles and carpools.',
         },
       ],
       [

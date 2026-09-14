@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Modal, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 
 import { AppButton, AppInput, AppText } from '../../../components/ui';
@@ -9,9 +9,8 @@ import { tripInquiriesApi, type ChatMessage } from '../../../api/trip-inquiries.
 import { normalizeApiError } from '../../../api/errors';
 import { useRideSocket, type ChatReadPayload } from '../socket';
 
-interface ChatSheetProps {
-  visible: boolean;
-  onClose: () => void;
+interface ChatPanelProps {
+  active: boolean;
   tripInquiryId: string;
   otherPartyName: string;
 }
@@ -40,14 +39,16 @@ function upsertMessage(list: LocalChatMessage[], incoming: ChatMessage): LocalCh
 }
 
 /**
- * One rider↔driver chat thread, scoped to a single TripInquiry — matches this
- * app's existing bottom-sheet Modal convention (see TripInquiryFormSheet /
- * LocationMapSheet). Both the driver's my-trips screen and the rider's
- * trip-request screen mount exactly one of these at a time, driven by a
- * single "which inquiry's sheet is open" piece of state — see those screens
- * for how they guarantee only one thread is ever open/joined at once.
+ * One rider↔driver chat thread, scoped to a single TripInquiry — meant to be
+ * embedded as a tab's content (flex:1) inside the driver's my-trips screen and
+ * the rider's trip-request screen, rather than presented as a modal. Both
+ * screens mount exactly one of these at a time per open trip, driven by a
+ * single "which tab is active" piece of state — `active` mirrors what used to
+ * be this component's `visible` prop (see ChatSheet, its since-removed
+ * modal-based predecessor) but now just means "this tab is the selected one",
+ * not "a modal is open".
  */
-export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: ChatSheetProps) {
+export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelProps) {
   const { colors, spacing } = useTheme();
   const { user } = useAuth();
   const currentUserId = user?.id;
@@ -75,9 +76,9 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
   const typingClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<FlatList<LocalChatMessage>>(null);
 
-  // --- initial history fetch, reset every time the sheet opens --------------
+  // --- initial history fetch, reset every time this tab becomes active --------
   useEffect(() => {
-    if (!visible) return;
+    if (!active) return;
     let cancelled = false;
     lastMarkedReadIdRef.current = null;
 
@@ -106,18 +107,18 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
     return () => {
       cancelled = true;
     };
-  }, [visible, tripInquiryId]);
+  }, [active, tripInquiryId]);
 
   // --- join/leave this inquiry's chat room -----------------------------------
   // Mirrors the driver/rider screens' own trip-room join/leave effects
   // exactly: joins once the shared socket is ready (which may not be the case
-  // yet on first mount), leaves again as soon as the sheet closes/unmounts.
+  // yet on first mount), leaves again as soon as this tab goes inactive/unmounts.
   useEffect(() => {
-    if (!visible || !isReady) return;
+    if (!active || !isReady) return;
     let cancelled = false;
     joinInquiry(tripInquiryId).then((result) => {
       if (!cancelled && !result.ok) {
-        console.warn('[ChatSheet] joinInquiry failed:', result.error);
+        console.warn('[ChatPanel] joinInquiry failed:', result.error);
       }
     });
     return () => {
@@ -127,18 +128,18 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
     // joinInquiry/leaveInquiry omitted deliberately: useRideSocket() returns a
     // new function identity every render (it reads live module state, not a
     // stale closure), so including them would tear down/rejoin the room on
-    // every render instead of only when visible/isReady/tripInquiryId change.
+    // every render instead of only when active/isReady/tripInquiryId change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, isReady, tripInquiryId]);
+  }, [active, isReady, tripInquiryId]);
 
   // --- incoming chat messages -------------------------------------------------
   useEffect(() => {
-    if (!visible) return;
+    if (!active) return;
     const unsubscribe = onChatMessage((payload) => {
       // The underlying socket connection is a shared singleton (see
       // socket.ts) — this listener fires for EVERY inquiry's chat.message
       // event app-wide, so every incoming message must be filtered to THIS
-      // sheet's own thread before being touched, mirroring the tripId-filter
+      // panel's own thread before being touched, mirroring the tripId-filter
       // already used by the rider's location-update subscription in
       // trip-request/[id].tsx.
       if (payload.tripInquiryId !== tripInquiryId) return;
@@ -146,11 +147,11 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
     });
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, tripInquiryId]);
+  }, [active, tripInquiryId]);
 
   // --- typing indicator ---------------------------------------------------------
   useEffect(() => {
-    if (!visible) return;
+    if (!active) return;
     const unsubscribe = onTyping((payload) => {
       if (payload.tripInquiryId !== tripInquiryId || payload.userId === currentUserId) return;
       setOtherTyping(true);
@@ -164,11 +165,11 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
       setOtherTyping(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, tripInquiryId, currentUserId]);
+  }, [active, tripInquiryId, currentUserId]);
 
   // --- read receipts for my own sent messages ------------------------------------
   useEffect(() => {
-    if (!visible) return;
+    if (!active) return;
     const unsubscribe = onReadReceipt((payload: ChatReadPayload) => {
       if (payload.tripInquiryId !== tripInquiryId) return;
       setMessages((prev) => {
@@ -183,11 +184,11 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
     });
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, tripInquiryId, currentUserId]);
+  }, [active, tripInquiryId, currentUserId]);
 
   // --- mark-as-read: whenever the latest message is a NEW one from the other party ---
   useEffect(() => {
-    if (!visible || messages.length === 0) return;
+    if (!active || messages.length === 0) return;
     const last = messages[messages.length - 1];
     if (last.senderId === currentUserId) return;
     if (lastMarkedReadIdRef.current === last.id) return;
@@ -195,7 +196,7 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
     markRead(tripInquiryId, last.id);
     // markRead omitted deliberately — same reasoning as joinInquiry/leaveInquiry above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, messages, currentUserId, tripInquiryId]);
+  }, [active, messages, currentUserId, tripInquiryId]);
 
   const handleChangeDraft = (text: string) => {
     setDraft(text);
@@ -239,91 +240,70 @@ export function ChatSheet({ visible, onClose, tripInquiryId, otherPartyName }: C
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-          <View
-            style={{
-              backgroundColor: colors.background,
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              height: '82%',
-              padding: spacing.lg,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: spacing.xs,
-              }}
-            >
-              <AppText variant="subtitle" numberOfLines={1} style={{ flex: 1, marginRight: spacing.md }}>
-                {otherPartyName}
-              </AppText>
-              <AppButton title="Close" variant="ghost" fullWidth={false} onPress={onClose} />
-            </View>
-
-            <View style={{ minHeight: 16, marginBottom: spacing.xs }}>
-              {otherTyping ? (
-                <AppText muted variant="caption">
-                  {otherPartyName} is typing…
-                </AppText>
-              ) : null}
-            </View>
-
-            <View style={{ flex: 1 }}>
-              {loading ? (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                  <ActivityIndicator color={colors.primary} />
-                </View>
-              ) : loadError ? (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                  <AppText color={colors.danger}>{loadError}</AppText>
-                </View>
-              ) : messages.length === 0 ? (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                  <AppText muted variant="caption">
-                    No messages yet — say hello.
-                  </AppText>
-                </View>
-              ) : (
-                <FlatList
-                  ref={listRef}
-                  data={messages}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={{ paddingVertical: spacing.sm }}
-                  onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-                  renderItem={({ item }) => <ChatBubble message={item} isOwn={item.senderId === currentUserId} />}
-                />
-              )}
-            </View>
-
-            {sendError ? (
-              <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.xs }}>
-                {sendError}
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={{ flex: 1, backgroundColor: colors.background, padding: spacing.lg }}>
+        <View style={{ marginBottom: spacing.xs }}>
+          <AppText variant="subtitle" numberOfLines={1}>
+            {otherPartyName}
+          </AppText>
+          <View style={{ minHeight: 16, marginTop: spacing.xs }}>
+            {otherTyping ? (
+              <AppText muted variant="caption">
+                {otherPartyName} is typing…
               </AppText>
             ) : null}
-
-            <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
-              <View style={{ flex: 1 }}>
-                <AppInput
-                  placeholder="Message…"
-                  value={draft}
-                  onChangeText={handleChangeDraft}
-                  multiline
-                  style={{ maxHeight: 100 }}
-                />
-              </View>
-              <View style={{ width: 88, marginBottom: spacing.md }}>
-                <AppButton title="Send" onPress={handleSend} disabled={!draft.trim()} />
-              </View>
-            </View>
           </View>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+
+        <View style={{ flex: 1 }}>
+          {loading ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : loadError ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <AppText color={colors.danger}>{loadError}</AppText>
+            </View>
+          ) : messages.length === 0 ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <AppText muted variant="caption">
+                No messages yet — say hello.
+              </AppText>
+            </View>
+          ) : (
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingVertical: spacing.sm }}
+              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+              renderItem={({ item }) => <ChatBubble message={item} isOwn={item.senderId === currentUserId} />}
+            />
+          )}
+        </View>
+
+        {sendError ? (
+          <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.xs }}>
+            {sendError}
+          </AppText>
+        ) : null}
+
+        <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
+          <View style={{ flex: 1 }}>
+            <AppInput
+              placeholder="Message…"
+              value={draft}
+              onChangeText={handleChangeDraft}
+              multiline
+              style={{ maxHeight: 100 }}
+            />
+          </View>
+          <View style={{ width: 88, marginBottom: spacing.md }}>
+            <AppButton title="Send" onPress={handleSend} disabled={!draft.trim()} />
+          </View>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
