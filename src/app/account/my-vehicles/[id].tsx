@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 
 import { useUserVehicle } from '../../../features/user-vehicles/queries';
-import { AppCard, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
+import { AppCard, AppScreen, AppText, ErrorState, LoadingState, Row, StatusBadge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { userVehicleStatusMeta } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
@@ -104,17 +104,5 @@ export default function UserVehicleDetailScreen() {
         </AppCard>
       ))}
     </AppScreen>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  const { spacing } = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs }}>
-      <AppText muted variant="caption">
-        {label}
-      </AppText>
-      <AppText variant="caption">{value}</AppText>
-    </View>
   );
 }

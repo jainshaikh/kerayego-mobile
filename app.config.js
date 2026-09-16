@@ -8,14 +8,14 @@ module.exports = {
     scheme: 'rentalmobile',
     userInterfaceStyle: 'automatic',
     ios: {
-      bundleIdentifier: 'com.rentalmobile.app',
+      bundleIdentifier: 'com.kerayego.app',
       icon: './assets/expo.icon',
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       },
     },
     android: {
-      package: 'com.rentalmobile.app',
+      package: 'com.kerayego.app',
       googleServicesFile: './google-services.json',
       adaptiveIcon: {
         backgroundColor: '#FF4E64',

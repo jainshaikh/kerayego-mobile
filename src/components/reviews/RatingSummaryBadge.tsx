@@ -13,5 +13,12 @@ interface RatingSummaryBadgeProps {
 export function RatingSummaryBadge({ subjectType, subjectId, size }: RatingSummaryBadgeProps) {
   const { data, isLoading } = useRatingSummary(subjectType, subjectId);
   if (isLoading || !subjectId) return null;
-  return <RatingBadge average={data?.average ?? null} count={data?.count ?? 0} size={size} />;
+  return (
+    <RatingBadge
+      average={data?.average ?? null}
+      count={data?.count ?? 0}
+      tripsCount={data?.completedTripsCount}
+      size={size}
+    />
+  );
 }

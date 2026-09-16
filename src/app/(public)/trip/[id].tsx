@@ -7,7 +7,7 @@ import { useTrip } from '../../../features/trips/queries';
 import { TripInquiryFormSheet } from '../../../features/trips/components/TripInquiryFormSheet';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
 import { ReviewsList } from '../../../components/reviews/ReviewsList';
-import { AppButton, AppCard, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { AppButton, AppCard, AppScreen, AppText, ErrorState, LoadingState, Row } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { formatPrice, titleCase } from '../../../utils/format';
 
@@ -133,17 +133,5 @@ export default function TripDetailScreen() {
         stops={trip.stops}
       />
     </AppScreen>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  const { spacing } = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs }}>
-      <AppText muted variant="caption">
-        {label}
-      </AppText>
-      <AppText variant="caption">{value}</AppText>
-    </View>
   );
 }

@@ -25,7 +25,7 @@ export default function PublicTabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Vehicles', tabBarIcon: tabIcon('car-outline', 'car') }} />
-      <Tabs.Screen name="trips" options={{ title: 'Trips', tabBarIcon: tabIcon('map-outline', 'map') }} />
+      <Tabs.Screen name="trips" options={{ title: 'Carpool', tabBarIcon: tabIcon('map-outline', 'map') }} />
       <Tabs.Screen
         name="providers"
         options={{ title: 'Providers', tabBarIcon: tabIcon('storefront-outline', 'storefront') }}

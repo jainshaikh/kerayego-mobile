@@ -5,6 +5,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type LatLng, type MapMarker
 import { AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { ThemeColors } from '../../../theme';
+import { REACHED_DOT_BG, REACHED_DOT_FG } from '../rideVisuals';
 
 export interface LiveTripStop {
   id: string;
@@ -56,10 +57,6 @@ export interface LiveTripMapProps {
 // treatment as 'upcoming' (see pinStyleFor below).
 const SELECTED_PIN_SIZE = 30;
 const REGULAR_PIN_SIZE = 24; // reached, next (non-selected) and upcoming
-// Not in the shared theme token file — legitimate new values specific to
-// this design's "reached" pin treatment.
-const REACHED_PIN_FILL = '#FFDDE2';
-const REACHED_PIN_TEXT = '#C2203C';
 // Gap between the selected pin's dot and its label chip below, and the
 // chip's approximate rendered height (13px/600 text + 3px vertical padding
 // each side) — used only to keep the DOT itself (not the chip) anchored at
@@ -70,7 +67,8 @@ const PIN_LABEL_HEIGHT_ESTIMATE = 24;
 // Driver pin (rider's active-ride map only — see the `driverLabel` prop
 // doc). Hardcoded per the reference mockup's driver-pin styling — not in
 // the shared theme token file, matching the convention already used for
-// REACHED_PIN_FILL/REACHED_PIN_TEXT above.
+// REACHED_DOT_BG/REACHED_DOT_FG (see rideVisuals.ts) — kept local here since
+// this pin's fill is the only surface that uses it.
 const DRIVER_PIN_SIZE = 30;
 const DRIVER_PIN_FILL = '#1A0F14';
 
@@ -82,7 +80,7 @@ const SELECTED_PIN_ANCHOR = {
 
 function pinStyleFor(status: NonNullable<LiveTripStop['status']>, colors: ThemeColors) {
   if (status === 'reached') {
-    return { size: REGULAR_PIN_SIZE, fill: REACHED_PIN_FILL, text: REACHED_PIN_TEXT, borderColor: undefined as string | undefined };
+    return { size: REGULAR_PIN_SIZE, fill: REACHED_DOT_BG, text: REACHED_DOT_FG, borderColor: undefined as string | undefined };
   }
   if (status === 'selected') {
     return { size: SELECTED_PIN_SIZE, fill: colors.primary, text: colors.primaryText, borderColor: undefined as string | undefined };

@@ -3,7 +3,7 @@
 @AGENTS.md
 
 Guidance for AI agents modifying this codebase. Deeper technical detail lives in
-[`docs/mobile-architecture.md`](docs/mobile-architecture.md) — read that for anything not covered here.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — read that for anything not covered here.
 
 Verified directly against source (Expo Router, TypeScript). Ignore
 `docs/rental_services_mobile_react_native_expo_implementation_reference.md` and any other existing
@@ -39,11 +39,15 @@ src/
   auth/                 auth-context.tsx (AuthProvider/useAuth), auth-guards.ts (mostly vestigial)
   api/                  client.ts (axios), query-client.ts, errors.ts, one *.api.ts per domain
   features/             one folder per domain: queries.ts (React Query hooks) + components/
-    liveRide/           socket.ts (shared Socket.IO client), LiveTripMap, ChatPanel, ChatModalSheet
+    liveRide/           socket.ts (shared Socket.IO client), LiveTripMap, ChatPanel, ChatModalSheet,
+                        rideVisuals.ts, geo.ts, openMapsNavigation.ts, useTripRoomPresence.ts,
+                        useBlockBackButtonWhileActive.ts (shared driver+rider live-ride pieces)
     location/           LocationField, LocationMapSheet, activeAutocomplete.ts
-    trips/              offlineSync.ts (offline action queue) + trip components
+    trips/              offlineSync.ts (offline action queue + shared runTripAction) + trip components;
+                        driverCockpit/ (driver day-of-execution hooks/components, see docs/ARCHITECTURE.md §10.1)
     notifications/      pushToken.ts
     media/              useImagePicker.ts
+    trip-inquiries/     queries.ts; riderLiveTrip/ (rider live-view hooks/components, see docs/ARCHITECTURE.md §10.1)
   storage/              secure-storage.ts (expo-secure-store), offline-trip-queue.ts (AsyncStorage)
   components/ui/        hand-rolled design system (AppButton, AppInput, AppScreen, StatusBadge, ...)
   components/maps/      NearMeControl, ResultsMap (search-results map, unrelated to LiveTripMap)
@@ -180,5 +184,5 @@ build.
 
 ## Where to go deeper
 
-[`docs/mobile-architecture.md`](docs/mobile-architecture.md) covers every screen, hook, and business rule
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) covers every screen, hook, and business rule
 in full, plus a consolidated list of verified discrepancies and open unknowns.

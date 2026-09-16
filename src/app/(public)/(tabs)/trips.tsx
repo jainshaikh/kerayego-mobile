@@ -54,7 +54,7 @@ export default function TripsScreen() {
     <AppScreen edges={['top', 'left', 'right']}>
       <View style={{ padding: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <AppText variant="title">Trips</AppText>
+          <AppText variant="title">Carpool</AppText>
           <AppButton title="Post a trip" fullWidth={false} onPress={handlePostTrip} />
         </View>
         <AppButton

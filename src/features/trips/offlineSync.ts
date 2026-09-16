@@ -14,6 +14,49 @@ import { TripStatus } from '../../types/enums';
 
 const FLUSH_INTERVAL_MS = 15_000;
 
+export interface OfflineTripQueue {
+  pendingCount: number;
+  flushing: boolean;
+  flushNow: () => Promise<void>;
+  enqueue: (action: QueuedTripAction) => Promise<void>;
+}
+
+export interface OfflineActionCallbacks<T> {
+  onSuccess?: (result: T) => void | Promise<void>;
+  onQueued?: () => void | Promise<void>;
+}
+
+/**
+ * Runs a day-of-trip mutation; on a genuine error, reports it via
+ * `setActionError`. On a NETWORK error specifically, queues
+ * `buildOfflineAction()` for later replay (see useOfflineTripQueue's flush)
+ * instead of surfacing a failure — this is what lets a driver/rider keep
+ * working through low-signal stretches of a route. Shared by
+ * useDriverTripActions and useRiderTripActions, which would otherwise each
+ * repeat this same try/catch/enqueue shape per action.
+ */
+export async function runTripAction<T>(
+  mutate: () => Promise<T>,
+  enqueue: OfflineTripQueue['enqueue'],
+  buildOfflineAction: () => QueuedTripAction,
+  setActionError: (message: string | null) => void,
+  callbacks: OfflineActionCallbacks<T> = {},
+): Promise<void> {
+  setActionError(null);
+  try {
+    const result = await mutate();
+    await callbacks.onSuccess?.(result);
+  } catch (error) {
+    const normalized = normalizeApiError(error);
+    if (normalized.kind === 'network') {
+      await enqueue(buildOfflineAction());
+      await callbacks.onQueued?.();
+    } else {
+      setActionError(normalized.message);
+    }
+  }
+}
+
 // Replays one trip's queued actions in FIFO order — order matters (a queued
 // PICKUP must reach the server before a queued DROPOFF for the same rider).
 // Stops at the first action that still can't reach the server at all, leaving
@@ -77,7 +120,7 @@ async function flushOnce(tripId: string): Promise<{ flushed: number; failed: num
 // comes back to the foreground, and on a short interval while this screen is
 // open (covers a driver on a moving route with intermittently dropping signal —
 // this app has no background-task infra, so nothing runs once it's backgrounded).
-export function useOfflineTripQueue(tripId: string | undefined) {
+export function useOfflineTripQueue(tripId: string | undefined): OfflineTripQueue {
   const queryClient = useQueryClient();
   const [pendingCount, setPendingCount] = useState(0);
   const [flushing, setFlushing] = useState(false);

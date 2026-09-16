@@ -5,6 +5,8 @@ export { DateField } from './DateField';
 export { AppCard } from './AppCard';
 export { AppScreen } from './AppScreen';
 export { StatusBadge } from './StatusBadge';
+export { Row } from './Row';
+export { DetailRow } from './DetailRow';
 export { LoadingState, EmptyState, ErrorState } from './States';
 export { TabBar } from './TabBar';
 export type { TabBarItem } from './TabBar';

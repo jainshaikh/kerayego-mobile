@@ -20,6 +20,8 @@ interface LocationFieldProps {
   error?: string;
   /** CLDR region codes to bias/restrict results, e.g. ['PK', 'AE', 'SA']. */
   regionCodes?: string[];
+  /** Hide the "Choose on map" pin-drop button — e.g. a plain location search filter has no map to drop a pin on. Defaults to true. */
+  showMapPicker?: boolean;
 }
 
 const DEBOUNCE_MS = 300;
@@ -50,6 +52,7 @@ export function LocationField({
   placeholder,
   error,
   regionCodes,
+  showMapPicker = true,
 }: LocationFieldProps) {
   const { colors, spacing, radii } = useTheme();
   const instanceId = useId();
@@ -132,13 +135,15 @@ export function LocationField({
         />
       </View>
 
-      <AppButton
-        title="Choose on map"
-        variant="secondary"
-        fullWidth={false}
-        onPress={() => setMapSheetVisible(true)}
-        style={{ marginTop: -spacing.sm, marginBottom: spacing.md, alignSelf: 'flex-start' }}
-      />
+      {showMapPicker ? (
+        <AppButton
+          title="Choose on map"
+          variant="secondary"
+          fullWidth={false}
+          onPress={() => setMapSheetVisible(true)}
+          style={{ marginTop: -spacing.sm, marginBottom: spacing.md, alignSelf: 'flex-start' }}
+        />
+      ) : null}
 
       <Modal visible={open} transparent animationType="none" onRequestClose={() => setOpen(false)}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />

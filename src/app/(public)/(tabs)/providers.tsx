@@ -1,25 +1,26 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
 
 import { useInfiniteProviders } from '../../../features/providers/queries';
 import { useCities } from '../../../features/listings/queries';
 import { ProviderCard } from '../../../features/providers/components/ProviderCard';
 import { FilterChipRow } from '../../../features/listings/components/FilterChipRow';
+import { LocationField } from '../../../features/location/components/LocationField';
 import { AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
 import { NearMeControl } from '../../../components/maps/NearMeControl';
-import { ResultsMap } from '../../../components/maps/ResultsMap';
 import { useCurrentLocation } from '../../../hooks/useCurrentLocation';
 import { useTheme } from '../../../theme';
+import { DEFAULT_NEARBY_RADIUS_KM, NEARBY_RADIUS_OPTIONS_KM } from '../../../constants/config';
 import type { ProviderFilters } from '../../../api/providers.api';
 
-// Kept small (a real neighborhood, not the whole city) so the "near me" map
-// circle reads as a local estimate rather than covering the entire metro area.
-const NEARBY_RADIUS_KM = 8;
+const LOCATION_REGION_CODES = ['PK', 'AE', 'SA'];
 
 export default function ProvidersScreen() {
-  const { spacing } = useTheme();
+  const { colors, spacing, radii } = useTheme();
   const [cityFilter, setCityFilter] = useState<string | undefined>(undefined);
+  const [locationText, setLocationText] = useState('');
+  const [radiusKm, setRadiusKm] = useState(DEFAULT_NEARBY_RADIUS_KM);
   const cities = useCities();
   const location = useCurrentLocation();
 
@@ -28,9 +29,9 @@ export default function ProvidersScreen() {
       city: location.coords ? undefined : cityFilter,
       lat: location.coords?.lat,
       lng: location.coords?.lng,
-      radiusKm: location.coords ? NEARBY_RADIUS_KM : undefined,
+      radiusKm: location.coords ? radiusKm : undefined,
     }),
-    [cityFilter, location.coords],
+    [cityFilter, location.coords, radiusKm],
   );
 
   const query = useInfiniteProviders(filters);
@@ -38,18 +39,14 @@ export default function ProvidersScreen() {
 
   const cityOptions = (cities.data ?? []).map((c) => ({ label: c, value: c }));
 
-  const pins = providers
-    .filter((p) => p.showrooms[0]?.mapLat != null && p.showrooms[0]?.mapLng != null)
-    .map((p) => ({
-      id: p.id,
-      lat: p.showrooms[0].mapLat as number,
-      lng: p.showrooms[0].mapLng as number,
-      title: p.businessName,
-    }));
-
   const handleNearMe = async () => {
     const coords = await location.requestLocation();
     if (coords) setCityFilter(undefined);
+  };
+
+  const handleClearLocation = () => {
+    location.clearLocation();
+    setLocationText('');
   };
 
   return (
@@ -64,19 +61,63 @@ export default function ProvidersScreen() {
           loading={location.loading}
           error={location.error}
           onActivate={handleNearMe}
-          onClear={location.clearLocation}
+          onClear={handleClearLocation}
         />
       </View>
 
-      {location.coords && pins.length > 0 ? (
-        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
-          <ResultsMap userLocation={location.coords} radiusKm={NEARBY_RADIUS_KM} pins={pins} />
+      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.sm, gap: spacing.sm }}>
+        <View
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <AppText variant="label">Find providers near a location</AppText>
+          {location.coords ? (
+            <Pressable onPress={handleClearLocation}>
+              <AppText variant="caption" color={colors.primary}>
+                Clear
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
-      ) : cityOptions.length > 0 ? (
-        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
+        <LocationField
+          value={locationText}
+          onChangeText={setLocationText}
+          onLocationChange={(lat, lng) => {
+            setCityFilter(undefined);
+            location.setManualLocation(lat, lng);
+          }}
+          placeholder="Search a city or area"
+          regionCodes={LOCATION_REGION_CODES}
+          showMapPicker={false}
+        />
+
+        {location.coords ? (
+          <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+            {NEARBY_RADIUS_OPTIONS_KM.map((option) => {
+              const selected = option === radiusKm;
+              return (
+                <Pressable
+                  key={option}
+                  onPress={() => setRadiusKm(option)}
+                  style={{
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.xs,
+                    borderRadius: radii.full,
+                    borderWidth: 1,
+                    borderColor: selected ? colors.primary : colors.border,
+                    backgroundColor: selected ? colors.primary : 'transparent',
+                  }}
+                >
+                  <AppText variant="caption" color={selected ? colors.primaryText : colors.text}>
+                    {option} km
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : cityOptions.length > 0 ? (
           <FilterChipRow options={cityOptions} value={cityFilter} onChange={setCityFilter} />
-        </View>
-      ) : null}
+        ) : null}
+      </View>
 
       {query.isLoading ? (
         <LoadingState label="Loading providers..." />

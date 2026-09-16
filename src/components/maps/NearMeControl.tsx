@@ -10,38 +10,21 @@ interface NearMeControlProps {
   onClear: () => void;
 }
 
+// A single toggle button: tapping it while inactive requests location and
+// activates the filter, tapping it again while active clears it. The active
+// state is communicated by the button's own fill (primary vs outline) rather
+// than a separate status bar or Clear button.
 export function NearMeControl({ active, loading, error, onActivate, onClear }: NearMeControlProps) {
   const { colors, spacing } = useTheme();
-
-  if (active) {
-    return (
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-          borderRadius: 12,
-          backgroundColor: colors.surfaceAlt,
-        }}
-      >
-        <AppText variant="label" color={colors.primary}>
-          📍 Showing results near you
-        </AppText>
-        <AppButton title="Clear" variant="ghost" fullWidth={false} onPress={onClear} />
-      </View>
-    );
-  }
 
   return (
     <View>
       <AppButton
         title={loading ? 'Locating…' : '📍 Near me'}
-        variant="outline"
+        variant={active ? 'primary' : 'outline'}
         fullWidth={false}
         loading={loading}
-        onPress={onActivate}
+        onPress={active ? onClear : onActivate}
       />
       {error ? (
         <AppText variant="caption" color={colors.danger} style={{ marginTop: spacing.xs }}>

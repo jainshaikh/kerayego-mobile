@@ -34,6 +34,8 @@ export interface ReviewsResponse {
 export interface RatingSummary {
   count: number;
   average: number | null;
+  /** USER subjects only — count of accepted, already-departed trip requests on either side (rider or driver). */
+  completedTripsCount?: number;
 }
 
 export interface EligibleBooking {

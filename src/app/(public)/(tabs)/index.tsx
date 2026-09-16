@@ -8,16 +8,12 @@ import { FilterSheet } from '../../../features/listings/components/FilterSheet';
 import { AppButton, AppInput, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
 import { NearMeControl } from '../../../components/maps/NearMeControl';
-import { ResultsMap } from '../../../components/maps/ResultsMap';
 import { useCurrentLocation } from '../../../hooks/useCurrentLocation';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { useAuth } from '../../../auth/auth-context';
 import { useTheme } from '../../../theme';
+import { DEFAULT_NEARBY_RADIUS_KM } from '../../../constants/config';
 import type { ListingFilters } from '../../../api/listings.api';
-
-// Kept small (a real neighborhood, not the whole city) so the "near me" map
-// circle reads as a local estimate rather than covering the entire metro area.
-const NEARBY_RADIUS_KM = 8;
 
 // The Vehicles tab IS the landing page — a directly browsable, filterable list,
 // not a separate hero/featured teaser screen.
@@ -32,6 +28,7 @@ export default function VehiclesScreen() {
   const [filters, setFilters] = useState<ListingFilters>({});
   const [sheetVisible, setSheetVisible] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(DEFAULT_NEARBY_RADIUS_KM);
   const location = useCurrentLocation();
 
   const appliedFilters = useMemo(
@@ -40,9 +37,9 @@ export default function VehiclesScreen() {
       search: debouncedSearchText || undefined,
       lat: location.coords?.lat,
       lng: location.coords?.lng,
-      radiusKm: location.coords ? NEARBY_RADIUS_KM : undefined,
+      radiusKm: location.coords ? radiusKm : undefined,
     }),
-    [filters, debouncedSearchText, location.coords],
+    [filters, debouncedSearchText, location.coords, radiusKm],
   );
   const query = useInfiniteListings(appliedFilters);
   const saved = useSavedVehicles();
@@ -51,10 +48,6 @@ export default function VehiclesScreen() {
     ? (saved.data?.data.map((entry) => entry.vehicle) ?? [])
     : (query.data?.pages.flatMap((page) => page.data) ?? []);
   const activeFilterCount = Object.values(filters).filter((v) => v !== undefined && v !== '').length;
-
-  const pins = vehicles
-    .filter((v) => v.showroom?.mapLat != null && v.showroom?.mapLng != null)
-    .map((v) => ({ id: v.id, lat: v.showroom!.mapLat as number, lng: v.showroom!.mapLng as number, title: v.title }));
 
   const handleNearMe = async () => {
     const coords = await location.requestLocation();
@@ -110,12 +103,6 @@ export default function VehiclesScreen() {
         ) : null}
       </View>
 
-      {location.coords && pins.length > 0 ? (
-        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
-          <ResultsMap userLocation={location.coords} radiusKm={NEARBY_RADIUS_KM} pins={pins} />
-        </View>
-      ) : null}
-
       {!favoritesOnly && query.isFetching && !query.isLoading ? (
         // A search/filter change swaps the query key entirely, but
         // placeholderData keeps the previous results on screen while the new
@@ -166,7 +153,17 @@ export default function VehiclesScreen() {
         />
       )}
 
-      <FilterSheet visible={sheetVisible} onClose={() => setSheetVisible(false)} filters={filters} onApply={setFilters} />
+      <FilterSheet
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        filters={filters}
+        onApply={setFilters}
+        locationActive={!!location.coords}
+        radiusKm={radiusKm}
+        onApplyRadius={setRadiusKm}
+        onApplyLocation={location.setManualLocation}
+        onClearLocation={location.clearLocation}
+      />
     </AppScreen>
   );
 }

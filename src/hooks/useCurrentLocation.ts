@@ -58,5 +58,13 @@ export function useCurrentLocation() {
     setError(null);
   }, []);
 
-  return { coords, loading, error, requestLocation, clearLocation };
+  // Lets a typed/selected place (Places autocomplete) populate the same
+  // "active location" the GPS-based requestLocation() does — the nearby
+  // query and NearMeControl's active state don't care which source set it.
+  const setManualLocation = useCallback((lat: number, lng: number) => {
+    setError(null);
+    setCoords({ lat, lng });
+  }, []);
+
+  return { coords, loading, error, requestLocation, clearLocation, setManualLocation };
 }
