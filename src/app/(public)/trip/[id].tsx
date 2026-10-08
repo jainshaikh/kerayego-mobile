@@ -2,12 +2,16 @@ import { useState } from 'react';
 import { Linking, ScrollView, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 
+import { useAuth } from '../../../auth/auth-context';
 import { useTrip } from '../../../features/trips/queries';
 import { TripInquiryFormSheet } from '../../../features/trips/components/TripInquiryFormSheet';
+import { AuthRequiredSheet } from '../../../components/auth/AuthRequiredSheet';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
 import { ReviewsList } from '../../../components/reviews/ReviewsList';
-import { AppButton, AppCard, AppScreen, AppText, ErrorState, LoadingState, Row } from '../../../components/ui';
+import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, Row } from '../../../components/ui';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { formatPrice, titleCase } from '../../../utils/format';
 
@@ -20,15 +24,33 @@ export default function TripDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, spacing } = useTheme();
   const { data: trip, isLoading, isError, refetch } = useTrip(id);
+  const { isAuthenticated } = useAuth();
   const [requestSheetVisible, setRequestSheetVisible] = useState(false);
+  const [authPromptVisible, setAuthPromptVisible] = useState(false);
+  const queryClient = useQueryClient();
+  // Reviews and rating badges on this screen are their own queries, owned by
+  // child components — invalidating ['reviews'] refetches the mounted ones.
+  const refresh = usePullToRefresh(() =>
+    Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['reviews'] })]),
+  );
 
   if (isLoading) return <LoadingState label="Loading trip..." />;
   if (isError || !trip) return <ErrorState message="This trip may no longer be available." onRetry={refetch} />;
 
+  // Requesting a seat needs an account — ask a guest to sign in before they
+  // fill out the form, not after the backend rejects the submit.
+  const handleRequestSeats = () => {
+    if (!isAuthenticated) {
+      setAuthPromptVisible(true);
+      return;
+    }
+    setRequestSheetVisible(true);
+  };
+
   return (
     <AppScreen edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: `${trip.originCity} → ${trip.destinationCity}` }} />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={<AppRefreshControl {...refresh} />}>
         <AppText variant="title" style={{ textTransform: 'capitalize' }}>
           {trip.originCity} → {trip.destinationCity}
         </AppText>
@@ -104,11 +126,7 @@ export default function TripDetailScreen() {
         </AppCard>
 
         {trip.availableSeats > 0 ? (
-          <AppButton
-            title="Request seats"
-            style={{ marginTop: spacing.xl }}
-            onPress={() => setRequestSheetVisible(true)}
-          />
+          <AppButton title="Request seats" style={{ marginTop: spacing.xl }} onPress={handleRequestSeats} />
         ) : (
           <AppButton title="Full — no seats left" variant="secondary" disabled style={{ marginTop: spacing.xl }} />
         )}
@@ -131,6 +149,15 @@ export default function TripDetailScreen() {
         routeLabel={`${titleCase(trip.originCity)} → ${titleCase(trip.destinationCity)}`}
         availableSeats={trip.availableSeats}
         stops={trip.stops}
+        onAuthRequired={() => setAuthPromptVisible(true)}
+      />
+
+      <AuthRequiredSheet
+        visible={authPromptVisible}
+        onClose={() => setAuthPromptVisible(false)}
+        title="Sign in to request a seat"
+        message="You need a KerayeGo account to request seats on a trip. Log in, or create a free account — you'll come back to this trip afterwards."
+        returnTo={`/trip/${id}`}
       />
     </AppScreen>
   );

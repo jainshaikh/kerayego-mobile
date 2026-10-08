@@ -3,7 +3,8 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 
 import { useUserVehicle } from '../../../features/user-vehicles/queries';
-import { AppCard, AppScreen, AppText, ErrorState, LoadingState, Row, StatusBadge } from '../../../components/ui';
+import { AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, Row, StatusBadge } from '../../../components/ui';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { userVehicleStatusMeta } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
@@ -20,6 +21,7 @@ export default function UserVehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, spacing } = useTheme();
   const { data: vehicle, isLoading, isError, refetch } = useUserVehicle(id);
+  const refresh = usePullToRefresh(refetch);
 
   if (isLoading) return <LoadingState label="Loading vehicle..." />;
   if (isError || !vehicle) return <ErrorState message="Couldn't load this vehicle." onRetry={refetch} />;
@@ -27,7 +29,11 @@ export default function UserVehicleDetailScreen() {
   const statusMeta = userVehicleStatusMeta[vehicle.status];
 
   return (
-    <AppScreen scroll contentContainerStyle={{ padding: spacing.lg }}>
+    <AppScreen
+      scroll
+      contentContainerStyle={{ padding: spacing.lg }}
+      refreshControl={<AppRefreshControl {...refresh} />}
+    >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg }}>
         <AppText variant="title">
           {titleCase(vehicle.make)} {titleCase(vehicle.model)}

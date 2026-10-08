@@ -3,8 +3,9 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 
 import { useRemoveSavedVehicle, useSavedVehicles } from '../../features/saved-vehicles/queries';
-import { AppCard, AppScreen, AppText, ErrorState, LoadingState } from '../../components/ui';
+import { AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../components/ui';
 import { EmptyState } from '../../components/ui/States';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { useTheme } from '../../theme';
 import { formatPrice } from '../../utils/format';
 
@@ -12,6 +13,7 @@ export default function SavedVehiclesScreen() {
   const { colors, spacing } = useTheme();
   const { data, isLoading, isError, refetch } = useSavedVehicles();
   const removeSavedVehicle = useRemoveSavedVehicle();
+  const refresh = usePullToRefresh(refetch);
 
   if (isLoading) return <LoadingState label="Loading saved vehicles..." />;
   if (isError) return <ErrorState message="Couldn't load your saved vehicles." onRetry={refetch} />;
@@ -22,6 +24,7 @@ export default function SavedVehiclesScreen() {
         data={data?.data ?? []}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
+        refreshControl={<AppRefreshControl {...refresh} />}
         renderItem={({ item }) => {
           const cover = item.vehicle.images[0];
           return (

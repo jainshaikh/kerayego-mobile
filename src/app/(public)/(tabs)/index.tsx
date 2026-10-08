@@ -5,11 +5,12 @@ import { useInfiniteListings } from '../../../features/listings/queries';
 import { useSavedVehicles } from '../../../features/saved-vehicles/queries';
 import { VehicleCard } from '../../../features/listings/components/VehicleCard';
 import { FilterSheet } from '../../../features/listings/components/FilterSheet';
-import { AppButton, AppInput, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { AppButton, AppInput, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
 import { NearMeControl } from '../../../components/maps/NearMeControl';
 import { useCurrentLocation } from '../../../hooks/useCurrentLocation';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useAuth } from '../../../auth/auth-context';
 import { useTheme } from '../../../theme';
 import { DEFAULT_NEARBY_RADIUS_KM } from '../../../constants/config';
@@ -43,6 +44,7 @@ export default function VehiclesScreen() {
   );
   const query = useInfiniteListings(appliedFilters);
   const saved = useSavedVehicles();
+  const refresh = usePullToRefresh(() => (favoritesOnly ? saved.refetch() : query.refetch()));
 
   const vehicles = favoritesOnly
     ? (saved.data?.data.map((entry) => entry.vehicle) ?? [])
@@ -103,11 +105,12 @@ export default function VehiclesScreen() {
         ) : null}
       </View>
 
-      {!favoritesOnly && query.isFetching && !query.isLoading ? (
+      {!favoritesOnly && query.isFetching && !query.isLoading && !refresh.refreshing ? (
         // A search/filter change swaps the query key entirely, but
         // placeholderData keeps the previous results on screen while the new
         // ones load — this just signals that a refresh is in progress,
-        // instead of replacing the list with a full loading skeleton.
+        // instead of replacing the list with a full loading skeleton. Hidden
+        // during a pull-to-refresh, whose own spinner already says so.
         <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
           <ActivityIndicator size="small" color={colors.primary} />
           <AppText muted variant="caption">
@@ -127,6 +130,7 @@ export default function VehiclesScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
             renderItem={({ item }) => <VehicleCard vehicle={item} />}
+            refreshControl={<AppRefreshControl {...refresh} />}
             ListEmptyComponent={
               <EmptyState title="No favorites yet" description="Tap the heart on a vehicle to save it here." />
             }
@@ -142,6 +146,7 @@ export default function VehiclesScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
           renderItem={({ item }) => <VehicleCard vehicle={item} />}
+          refreshControl={<AppRefreshControl {...refresh} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => {
             if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage();

@@ -3,7 +3,8 @@ import { ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 
 import { useBookingRequest, useUpdateBookingStatus } from '../../../features/booking-requests/queries';
-import { AppButton, AppCard, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
+import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { bookingStatusMeta, userBookingActions, BookingRequestStatus } from '../../../types/enums';
 import { formatDate, formatPrice } from '../../../utils/format';
@@ -15,6 +16,7 @@ export default function MyInquiryDetailScreen() {
   const { data: booking, isLoading, isError, refetch } = useBookingRequest(id);
   const updateStatus = useUpdateBookingStatus(id as string);
   const [actionError, setActionError] = useState<string | null>(null);
+  const refresh = usePullToRefresh(refetch);
 
   if (isLoading) return <LoadingState label="Loading inquiry..." />;
   if (isError || !booking) return <ErrorState message="Couldn't load this inquiry." onRetry={refetch} />;
@@ -33,7 +35,7 @@ export default function MyInquiryDetailScreen() {
   return (
     <AppScreen edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Inquiry details' }} />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={<AppRefreshControl {...refresh} />}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <AppText variant="title" style={{ flex: 1, marginRight: spacing.md }}>
             {booking.vehicle.title}

@@ -7,7 +7,8 @@ import { useTripRoomPresence } from '../../../features/liveRide/useTripRoomPrese
 import { useBlockBackButtonWhileActive } from '../../../features/liveRide/useBlockBackButtonWhileActive';
 import { useTripInquiryInbox, useUpdateTripInquiryStatus } from '../../../features/trip-inquiries/queries';
 import { useAuth } from '../../../auth/auth-context';
-import { AppScreen, ErrorState, LoadingState } from '../../../components/ui';
+import { AppRefreshControl, AppScreen, ErrorState, LoadingState } from '../../../components/ui';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { TripStatus } from '../../../types/enums';
 import { useDriverLocationWatch } from '../../../features/trips/driverCockpit/useDriverLocationWatch';
 import { useDriverStopProgress } from '../../../features/trips/driverCockpit/useDriverStopProgress';
@@ -20,7 +21,11 @@ export default function MyTripDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { data: trip, isLoading, isError, refetch } = useMyTrip(id);
-  const { data: inquiriesRes, isLoading: inquiriesLoading } = useTripInquiryInbox({ tripId: id as string });
+  const {
+    data: inquiriesRes,
+    isLoading: inquiriesLoading,
+    refetch: refetchInquiries,
+  } = useTripInquiryInbox({ tripId: id as string });
   const updateInquiryStatus = useUpdateTripInquiryStatus();
   // Fetched (and cached by react-query) regardless of status — the backend
   // doesn't gate this on trip status either — so a manifest fetched earlier
@@ -50,6 +55,9 @@ export default function MyTripDetailScreen() {
     active: effectiveInProgress,
   });
   const chat = useDriverChatInbox(user?.id);
+  // Only wired into the pre-live posted-trip view below — the live cockpit is
+  // kept current by the socket, the offline queue, and post-action refetches.
+  const refresh = usePullToRefresh(() => Promise.all([refetch(), refetchInquiries()]));
 
   if (isLoading) return <LoadingState label="Loading trip..." />;
   if (isError || !trip) return <ErrorState message="Couldn't load this trip." onRetry={refetch} />;
@@ -91,6 +99,7 @@ export default function MyTripDetailScreen() {
           updateInquiryStatus={updateInquiryStatus}
           driverActions={driverActions}
           offlineQueue={offlineQueue}
+          refreshControl={<AppRefreshControl {...refresh} />}
         />
       )}
     </AppScreen>

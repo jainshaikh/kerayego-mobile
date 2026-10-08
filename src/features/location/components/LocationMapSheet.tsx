@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
-import { Modal, View } from 'react-native';
+import { View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, type LatLng, type MapPressEvent, type MarkerDragStartEndEvent } from 'react-native-maps';
 
-import { AppButton, AppText } from '../../../components/ui';
+import { AppButton, AppSheet, AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { useCurrentLocation } from '../../../hooks/useCurrentLocation';
 import { geoApi } from '../../../api/geo.api';
@@ -75,57 +75,42 @@ export function LocationMapSheet({ visible, onClose, onConfirm, initialLat, init
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-        <View
-          style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: radii.sheet,
-            borderTopRightRadius: radii.sheet,
-            height: '75%',
-            padding: spacing.lg,
-          }}
+    <AppSheet visible={visible} onClose={onClose} title="Choose on map" height="75%">
+      <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
+        {pin ? 'Drag the pin or tap the map to fine-tune the spot.' : 'Tap the map to drop a pin, or use your current location.'}
+      </AppText>
+
+      <View style={{ flex: 1, borderRadius: radii.card, overflow: 'hidden', marginBottom: spacing.sm }}>
+        <MapView
+          ref={mapRef}
+          provider={PROVIDER_GOOGLE}
+          style={{ flex: 1 }}
+          initialRegion={pin ? { ...pin, latitudeDelta: PICKED_DELTA, longitudeDelta: PICKED_DELTA } : DEFAULT_REGION}
+          onPress={handleMapPress}
         >
-          <AppText variant="subtitle" style={{ marginBottom: spacing.xs }}>
-            Choose on map
-          </AppText>
-          <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
-            {pin ? 'Drag the pin or tap the map to fine-tune the spot.' : 'Tap the map to drop a pin, or use your current location.'}
-          </AppText>
+          {pin ? <Marker coordinate={pin} draggable onDragEnd={handleMarkerDragEnd} /> : null}
+        </MapView>
+      </View>
 
-          <View style={{ flex: 1, borderRadius: radii.card, overflow: 'hidden', marginBottom: spacing.sm }}>
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_GOOGLE}
-              style={{ flex: 1 }}
-              initialRegion={pin ? { ...pin, latitudeDelta: PICKED_DELTA, longitudeDelta: PICKED_DELTA } : DEFAULT_REGION}
-              onPress={handleMapPress}
-            >
-              {pin ? <Marker coordinate={pin} draggable onDragEnd={handleMarkerDragEnd} /> : null}
-            </MapView>
-          </View>
+      {error ? (
+        <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.sm }}>
+          {error}
+        </AppText>
+      ) : null}
 
-          {error ? (
-            <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.sm }}>
-              {error}
-            </AppText>
-          ) : null}
-
-          <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
-            <View style={{ flex: 1 }}>
-              <AppButton title="Current location" variant="secondary" loading={locating} onPress={handleUseCurrentLocation} />
-            </View>
-          </View>
-          <View style={{ flexDirection: 'row', gap: spacing.md }}>
-            <View style={{ flex: 1 }}>
-              <AppButton title="Cancel" variant="secondary" onPress={onClose} />
-            </View>
-            <View style={{ flex: 2 }}>
-              <AppButton title="Confirm location" disabled={!pin} loading={confirming} onPress={handleConfirm} />
-            </View>
-          </View>
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
+        <View style={{ flex: 1 }}>
+          <AppButton title="Current location" variant="secondary" loading={locating} onPress={handleUseCurrentLocation} />
         </View>
       </View>
-    </Modal>
+      <View style={{ flexDirection: 'row', gap: spacing.md }}>
+        <View style={{ flex: 1 }}>
+          <AppButton title="Cancel" variant="secondary" onPress={onClose} />
+        </View>
+        <View style={{ flex: 2 }}>
+          <AppButton title="Confirm location" disabled={!pin} loading={confirming} onPress={handleConfirm} />
+        </View>
+      </View>
+    </AppSheet>
   );
 }

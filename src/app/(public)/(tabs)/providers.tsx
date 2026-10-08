@@ -6,10 +6,11 @@ import { useCities } from '../../../features/listings/queries';
 import { ProviderCard } from '../../../features/providers/components/ProviderCard';
 import { FilterChipRow } from '../../../features/listings/components/FilterChipRow';
 import { LocationField } from '../../../features/location/components/LocationField';
-import { AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
 import { NearMeControl } from '../../../components/maps/NearMeControl';
 import { useCurrentLocation } from '../../../hooks/useCurrentLocation';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { DEFAULT_NEARBY_RADIUS_KM, NEARBY_RADIUS_OPTIONS_KM } from '../../../constants/config';
 import type { ProviderFilters } from '../../../api/providers.api';
@@ -35,6 +36,7 @@ export default function ProvidersScreen() {
   );
 
   const query = useInfiniteProviders(filters);
+  const refresh = usePullToRefresh(() => Promise.all([query.refetch(), cities.refetch()]));
   const providers = query.data?.pages.flatMap((page) => page.data) ?? [];
 
   const cityOptions = (cities.data ?? []).map((c) => ({ label: c, value: c }));
@@ -129,6 +131,7 @@ export default function ProvidersScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
           renderItem={({ item }) => <ProviderCard provider={item} />}
+          refreshControl={<AppRefreshControl {...refresh} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => {
             if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage();

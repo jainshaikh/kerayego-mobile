@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, router } from 'expo-router';
+import { Link, router, useLocalSearchParams } from 'expo-router';
 
 import { useAuth } from '../../auth/auth-context';
 import { registerSchema, type RegisterFormValues } from '../../schemas/auth.schema';
@@ -13,6 +13,11 @@ import { useTheme } from '../../theme';
 export default function RegisterScreen() {
   const { register } = useAuth();
   const { spacing, colors } = useTheme();
+  // Not used here directly — registering doesn't log anyone in — just passed
+  // on to login, so a guest who signed up mid-action ends up back where they
+  // started once they do log in.
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const loginHref = returnTo ? { pathname: '/login' as const, params: { returnTo } } : '/login';
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -43,7 +48,7 @@ export default function RegisterScreen() {
         <AppText muted style={{ marginBottom: spacing.xl }}>
           {successMessage}
         </AppText>
-        <AppButton title="Go to login" onPress={() => router.replace('/login')} />
+        <AppButton title="Go to login" onPress={() => router.replace(loginHref)} />
       </AppScreen>
     );
   }
@@ -140,7 +145,7 @@ export default function RegisterScreen() {
       <AppButton title="Create account" loading={isSubmitting} onPress={handleSubmit(onSubmit)} />
 
       <View style={{ alignItems: 'center', marginTop: spacing.lg }}>
-        <Link href="/login">
+        <Link href={loginHref}>
           <AppText muted>
             Already have an account? <AppText color={colors.primary}>Log in</AppText>
           </AppText>

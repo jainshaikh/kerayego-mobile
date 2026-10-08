@@ -3,8 +3,9 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 
 import { useMyUserVehicles } from '../../../features/user-vehicles/queries';
-import { AppButton, AppCard, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
+import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { userVehicleStatusMeta } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
@@ -12,6 +13,7 @@ import { titleCase } from '../../../utils/format';
 export default function MyVehiclesScreen() {
   const { colors, spacing } = useTheme();
   const { data, isLoading, isError, refetch } = useMyUserVehicles();
+  const refresh = usePullToRefresh(refetch);
 
   if (isLoading) return <LoadingState label="Loading your vehicles..." />;
   if (isError) return <ErrorState message="Couldn't load your vehicles." onRetry={refetch} />;
@@ -22,6 +24,7 @@ export default function MyVehiclesScreen() {
         data={data ?? []}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
+        refreshControl={<AppRefreshControl {...refresh} />}
         ListHeaderComponent={
           <AppButton
             title="Register a vehicle"

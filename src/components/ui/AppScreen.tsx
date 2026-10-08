@@ -1,4 +1,13 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type ViewProps } from 'react-native';
+import type { ReactElement } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type RefreshControlProps,
+  type ViewProps,
+} from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
 
@@ -7,6 +16,8 @@ interface AppScreenProps extends ViewProps {
   keyboardAvoiding?: boolean;
   edges?: Edge[];
   contentContainerStyle?: object;
+  // Only applies with `scroll` — a non-scroll screen has nothing to pull.
+  refreshControl?: ReactElement<RefreshControlProps>;
 }
 
 export function AppScreen({
@@ -16,6 +27,7 @@ export function AppScreen({
   edges = ['top', 'left', 'right', 'bottom'],
   style,
   contentContainerStyle,
+  refreshControl,
   ...props
 }: AppScreenProps) {
   const { colors } = useTheme();
@@ -24,6 +36,7 @@ export function AppScreen({
     <ScrollView
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+      refreshControl={refreshControl}
     >
       {children}
     </ScrollView>

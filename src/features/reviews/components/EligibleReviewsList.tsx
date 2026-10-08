@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Modal, View } from 'react-native';
+import { View } from 'react-native';
 
 import { useMyEligibleReviews, useCreateReview } from '../queries';
 import type { ReviewContext, ReviewSubjectType } from '../../../api/reviews.api';
 import { RatingStars } from '../../../components/reviews/RatingStars';
-import { AppButton, AppCard, AppInput, AppText, EmptyState, LoadingState } from '../../../components/ui';
+import { AppButton, AppCard, AppInput, AppSheet, AppText, EmptyState, LoadingState } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { normalizeApiError } from '../../../api/errors';
 
@@ -22,7 +22,7 @@ interface PendingRating {
 }
 
 function RateModal({ pending, onClose }: { pending: PendingRating | null; onClose: () => void }) {
-  const { colors, spacing, radii } = useTheme();
+  const { colors, spacing } = useTheme();
   const createReview = useCreateReview();
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -56,53 +56,37 @@ function RateModal({ pending, onClose }: { pending: PendingRating | null; onClos
   };
 
   return (
-    <Modal visible={!!pending} animationType="slide" transparent onRequestClose={close}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-        <View
-          style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: radii.sheet,
-            borderTopRightRadius: radii.sheet,
-            maxHeight: '90%',
-            padding: spacing.lg,
-          }}
-        >
-          <AppText variant="subtitle" style={{ marginBottom: spacing.md }}>
-            {pending.title}
+    <AppSheet visible={!!pending} onClose={close} title={pending.title}>
+      {pending.targets.map((t) => (
+        <View key={t.subjectId} style={{ marginBottom: spacing.lg }}>
+          <AppText variant="label" style={{ marginBottom: spacing.xs }}>
+            {t.label}
           </AppText>
-
-          {pending.targets.map((t) => (
-            <View key={t.subjectId} style={{ marginBottom: spacing.lg }}>
-              <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-                {t.label}
-              </AppText>
-              <RatingStars value={ratings[t.subjectId] ?? 0} onChange={(v) => setRatings((r) => ({ ...r, [t.subjectId]: v }))} size="lg" />
-              <AppInput
-                style={{ marginTop: spacing.sm, marginBottom: 0 }}
-                multiline
-                numberOfLines={2}
-                placeholder="Add a comment (optional)"
-                value={comments[t.subjectId] ?? ''}
-                onChangeText={(text) => setComments((c) => ({ ...c, [t.subjectId]: text }))}
-              />
-            </View>
-          ))}
-
-          {submitError ? (
-            <AppText color={colors.danger} style={{ marginBottom: spacing.md }}>
-              {submitError}
-            </AppText>
-          ) : null}
-
-          <AppButton
-            title="Submit rating"
-            disabled={!allRated}
-            loading={createReview.isPending}
-            onPress={handleSubmit}
+          <RatingStars value={ratings[t.subjectId] ?? 0} onChange={(v) => setRatings((r) => ({ ...r, [t.subjectId]: v }))} size="lg" />
+          <AppInput
+            style={{ marginTop: spacing.sm, marginBottom: 0 }}
+            multiline
+            numberOfLines={2}
+            placeholder="Add a comment (optional)"
+            value={comments[t.subjectId] ?? ''}
+            onChangeText={(text) => setComments((c) => ({ ...c, [t.subjectId]: text }))}
           />
         </View>
-      </View>
-    </Modal>
+      ))}
+
+      {submitError ? (
+        <AppText color={colors.danger} style={{ marginBottom: spacing.md }}>
+          {submitError}
+        </AppText>
+      ) : null}
+
+      <AppButton
+        title="Submit rating"
+        disabled={!allRated}
+        loading={createReview.isPending}
+        onPress={handleSubmit}
+      />
+    </AppSheet>
   );
 }
 

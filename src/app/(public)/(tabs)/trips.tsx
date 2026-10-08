@@ -7,8 +7,9 @@ import { useInfiniteTrips, useTripRouteGroups } from '../../../features/trips/qu
 import { TripCard } from '../../../features/trips/components/TripCard';
 import { TripFilterSheet } from '../../../features/trips/components/TripFilterSheet';
 import { RouteGroupCard } from '../../../features/trips/components/RouteGroupCard';
-import { AppButton, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { AppButton, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { titleCase } from '../../../utils/format';
 import type { TripFilters } from '../../../api/trips.api';
@@ -21,6 +22,7 @@ export default function TripsScreen() {
 
   const query = useInfiniteTrips(filters);
   const routeGroups = useTripRouteGroups();
+  const refresh = usePullToRefresh(() => Promise.all([query.refetch(), routeGroups.refetch()]));
   const trips = query.data?.pages.flatMap((page) => page.data) ?? [];
   const activeFilterCount = Object.values(filters).filter((v) => v !== undefined && v !== '').length;
 
@@ -112,6 +114,7 @@ export default function TripsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
           renderItem={({ item }) => <TripCard trip={item} />}
+          refreshControl={<AppRefreshControl {...refresh} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => {
             if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage();

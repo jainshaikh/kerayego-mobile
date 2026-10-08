@@ -89,7 +89,7 @@ export default function LoginScreen() {
         <Link href="/forgot-password">
           <AppText color={colors.primary}>Forgot password?</AppText>
         </Link>
-        <Link href="/register">
+        <Link href={returnTo ? { pathname: '/register', params: { returnTo } } : '/register'}>
           <AppText muted>
             Don&apos;t have an account? <AppText color={colors.primary}>Sign up</AppText>
           </AppText>

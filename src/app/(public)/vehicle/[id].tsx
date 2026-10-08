@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { useVehicleDetail } from '../../../features/listings/queries';
 import { SaveButton } from '../../../features/saved-vehicles/components/SaveButton';
@@ -8,8 +9,9 @@ import { InquiryFormSheet } from '../../../features/booking-requests/components/
 import { VehicleGallery } from '../../../features/listings/components/VehicleGallery';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
 import { ReviewsList } from '../../../components/reviews/ReviewsList';
-import { AppButton, AppCard, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { useAuth } from '../../../auth/auth-context';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { formatPrice, titleCase } from '../../../utils/format';
 import { getAvailableDurations, getUnitPrice } from '../../../utils/rentalDuration';
@@ -24,6 +26,12 @@ export default function VehicleDetailScreen() {
   const [inquiryVisible, setInquiryVisible] = useState(false);
 
   const { data: vehicle, isLoading, isError, refetch } = useVehicleDetail(slug);
+  const queryClient = useQueryClient();
+  // Reviews and rating badges on this screen are their own queries, owned by
+  // child components — invalidating ['reviews'] refetches the mounted ones.
+  const refresh = usePullToRefresh(() =>
+    Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['reviews'] })]),
+  );
 
   if (isLoading) return <LoadingState label="Loading vehicle..." />;
   if (isError || !vehicle) {
@@ -43,7 +51,7 @@ export default function VehicleDetailScreen() {
   return (
     <AppScreen edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: vehicle.title }} />
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<AppRefreshControl {...refresh} />}>
         <VehicleGallery images={vehicle.images} title={vehicle.title} />
 
         <View style={{ padding: spacing.lg }}>

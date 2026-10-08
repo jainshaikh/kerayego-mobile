@@ -1,12 +1,14 @@
 import { FlatList, Pressable, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { usePublicProvider } from '../../../features/providers/queries';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
 import { ReviewsList } from '../../../components/reviews/ReviewsList';
-import { AppCard, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { formatPrice } from '../../../utils/format';
 
@@ -16,6 +18,12 @@ export default function ProviderProfileScreen() {
   const { id: slug } = useLocalSearchParams<{ id: string }>();
   const { colors, spacing, radii } = useTheme();
   const { data: provider, isLoading, isError, refetch } = usePublicProvider(slug);
+  const queryClient = useQueryClient();
+  // Reviews and rating badges on this screen are their own queries, owned by
+  // child components — invalidating ['reviews'] refetches the mounted ones.
+  const refresh = usePullToRefresh(() =>
+    Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['reviews'] })]),
+  );
 
   if (isLoading) return <LoadingState label="Loading provider..." />;
   if (isError || !provider) {
@@ -31,6 +39,7 @@ export default function ProviderProfileScreen() {
         contentContainerStyle={{ padding: spacing.lg }}
         numColumns={2}
         columnWrapperStyle={{ gap: spacing.md }}
+        refreshControl={<AppRefreshControl {...refresh} />}
         ListHeaderComponent={
           <View style={{ marginBottom: spacing.lg }}>
             {provider.bannerUrl ? (

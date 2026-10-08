@@ -60,8 +60,9 @@ export async function runTripAction<T>(
 // Replays one trip's queued actions in FIFO order — order matters (a queued
 // PICKUP must reach the server before a queued DROPOFF for the same rider).
 // Stops at the first action that still can't reach the server at all, leaving
-// it and everything after it queued for the next attempt.
-async function flushOnce(tripId: string): Promise<{ flushed: number; failed: number }> {
+// it and everything after it queued for the next attempt. Exported only so
+// offlineSync.test.ts can drive it directly; screens go through the hook.
+export async function flushOnce(tripId: string): Promise<{ flushed: number; failed: number }> {
   const queue = await getQueuedActionsForTrip(tripId);
   let flushed = 0;
   let failed = 0;

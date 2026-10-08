@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { useAuth } from '../../../auth/auth-context';
 import { useMyBookingCounts } from '../../../features/booking-requests/queries';
 import { useSavedVehicles } from '../../../features/saved-vehicles/queries';
-import { AppButton, AppCard, AppScreen, AppText } from '../../../components/ui';
+import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText } from '../../../components/ui';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 
 function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
@@ -51,9 +52,14 @@ function CustomerProfile({ user }: { user: { name: string; email: string } }) {
   const { logout } = useAuth();
   const counts = useMyBookingCounts();
   const saved = useSavedVehicles();
+  const refresh = usePullToRefresh(() => Promise.all([counts.refetch(), saved.refetch()]));
 
   return (
-    <AppScreen scroll contentContainerStyle={{ padding: spacing.lg }}>
+    <AppScreen
+      scroll
+      contentContainerStyle={{ padding: spacing.lg }}
+      refreshControl={<AppRefreshControl {...refresh} />}
+    >
       <AppText variant="title">{user.name}</AppText>
       <AppText muted style={{ marginBottom: spacing.lg }}>
         {user.email}

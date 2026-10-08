@@ -5,7 +5,8 @@ import { useOfflineTripQueue } from '../../../features/trips/offlineSync';
 import { useRideSocket } from '../../../features/liveRide/socket';
 import { useTripRoomPresence } from '../../../features/liveRide/useTripRoomPresence';
 import { useBlockBackButtonWhileActive } from '../../../features/liveRide/useBlockBackButtonWhileActive';
-import { ErrorState, LoadingState } from '../../../components/ui';
+import { AppRefreshControl, ErrorState, LoadingState } from '../../../components/ui';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { TripInquiryStatus, TripStatus, tripInquiryRiderActions } from '../../../types/enums';
 import { useRiderLiveRoute } from '../../../features/trip-inquiries/riderLiveTrip/useRiderLiveRoute';
 import { useRiderTripActions } from '../../../features/trip-inquiries/riderLiveTrip/useRiderTripActions';
@@ -43,6 +44,9 @@ export default function MyTripRequestDetailScreen() {
 
   useTripRoomPresence(inquiry?.trip.id, tripLive);
   useBlockBackButtonWhileActive(tripLive);
+  // Only wired into the pre-live view below — the live view is kept current
+  // by the socket and this query's own 20s polling.
+  const refresh = usePullToRefresh(refetch);
 
   if (isLoading) return <LoadingState label="Loading request..." />;
   if (isError || !inquiry) return <ErrorState message="Couldn't load this request." onRetry={refetch} />;
@@ -67,6 +71,7 @@ export default function MyTripRequestDetailScreen() {
         availableActions={availableActions}
         riderActions={riderActions}
         rideActionAvailability={rideActionAvailability}
+        refreshControl={<AppRefreshControl {...refresh} />}
       />
     );
   }

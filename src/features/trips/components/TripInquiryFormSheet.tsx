@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 
 import { useTheme } from '../../../theme';
-import { AppButton, AppInput, AppText } from '../../../components/ui';
+import { AppButton, AppInput, AppSheet, AppText } from '../../../components/ui';
 import { tripInquirySchema, type TripInquiryFormValues } from '../../../schemas/trip-inquiry.schema';
 import { useCreateTripInquiry } from '../../trip-inquiries/queries';
 import { normalizeApiError } from '../../../api/errors';
@@ -18,6 +18,10 @@ interface TripInquiryFormSheetProps {
   routeLabel: string; // e.g. "Lahore → Islamabad"
   availableSeats: number;
   stops: TripStop[];
+  // Called (after closing this sheet) when the submit is rejected as
+  // unauthenticated — e.g. the session expired while the form was open — so
+  // the screen can offer login/sign-up instead of a raw token error.
+  onAuthRequired?: () => void;
 }
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
@@ -41,7 +45,15 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
   );
 }
 
-export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, availableSeats, stops }: TripInquiryFormSheetProps) {
+export function TripInquiryFormSheet({
+  visible,
+  onClose,
+  tripId,
+  routeLabel,
+  availableSeats,
+  stops,
+  onAuthRequired,
+}: TripInquiryFormSheetProps) {
   const { colors, spacing } = useTheme();
   const createInquiry = useCreateTripInquiry();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -86,175 +98,162 @@ export function TripInquiryFormSheet({ visible, onClose, tripId, routeLabel, ava
       onClose();
       router.push('/account/trip-requests');
     } catch (error) {
-      setSubmitError(normalizeApiError(error).message);
+      const normalized = normalizeApiError(error);
+      if (normalized.kind === 'unauthorized' && onAuthRequired) {
+        onClose();
+        onAuthRequired();
+        return;
+      }
+      setSubmitError(normalized.message);
     }
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-        <View
-          style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
-            maxHeight: '90%',
-            padding: spacing.lg,
-          }}
-        >
-          <AppText variant="subtitle" style={{ marginBottom: spacing.xs }}>
-            Request seats
+    <AppSheet visible={visible} onClose={onClose} title="Request seats" subtitle={routeLabel}>
+      <ScrollView keyboardShouldPersistTaps="handled">
+        <AppText variant="label" style={{ marginBottom: spacing.xs }}>
+          Seats needed
+        </AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm }}>
+          <Pressable
+            onPress={() => setValue('requestedSeats', Math.max(1, requestedSeats - 1))}
+            disabled={requestedSeats <= 1}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: requestedSeats <= 1 ? 0.4 : 1,
+            }}
+          >
+            <AppText variant="subtitle">–</AppText>
+          </Pressable>
+          <AppText variant="subtitle" style={{ width: 32, textAlign: 'center' }}>
+            {requestedSeats}
           </AppText>
-          <AppText muted variant="caption" style={{ marginBottom: spacing.md }} numberOfLines={1}>
-            {routeLabel}
+          <Pressable
+            onPress={() => setValue('requestedSeats', Math.min(maxSeats, requestedSeats + 1))}
+            disabled={requestedSeats >= maxSeats}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: requestedSeats >= maxSeats ? 0.4 : 1,
+            }}
+          >
+            <AppText variant="subtitle">+</AppText>
+          </Pressable>
+          <AppText muted variant="caption">
+            {availableSeats} available
           </AppText>
+        </View>
+        {errors.requestedSeats ? (
+          <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.sm }}>
+            {errors.requestedSeats.message}
+          </AppText>
+        ) : null}
 
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-              Seats needed
+        <View style={{ marginBottom: spacing.md }}>
+          <AppText variant="label" style={{ marginBottom: spacing.xs }}>
+            Pickup point
+          </AppText>
+          {pickupStops.length > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {pickupStops.map((stop) => (
+                <Chip
+                  key={stop.id}
+                  label={stop.label}
+                  active={selectedPickupStopId === stop.id}
+                  onPress={() => setSelectedPickupStopId((current) => (current === stop.id ? null : stop.id))}
+                />
+              ))}
+            </View>
+          ) : (
+            <AppText color={colors.danger} variant="caption">
+              This trip has no valid pickup points — contact the driver.
             </AppText>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm }}>
-              <Pressable
-                onPress={() => setValue('requestedSeats', Math.max(1, requestedSeats - 1))}
-                disabled={requestedSeats <= 1}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: requestedSeats <= 1 ? 0.4 : 1,
-                }}
-              >
-                <AppText variant="subtitle">–</AppText>
-              </Pressable>
-              <AppText variant="subtitle" style={{ width: 32, textAlign: 'center' }}>
-                {requestedSeats}
-              </AppText>
-              <Pressable
-                onPress={() => setValue('requestedSeats', Math.min(maxSeats, requestedSeats + 1))}
-                disabled={requestedSeats >= maxSeats}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: requestedSeats >= maxSeats ? 0.4 : 1,
-                }}
-              >
-                <AppText variant="subtitle">+</AppText>
-              </Pressable>
-              <AppText muted variant="caption">
-                {availableSeats} available
-              </AppText>
-            </View>
-            {errors.requestedSeats ? (
-              <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.sm }}>
-                {errors.requestedSeats.message}
-              </AppText>
-            ) : null}
+          )}
+        </View>
 
-            <View style={{ marginBottom: spacing.md }}>
-              <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-                Pickup point
-              </AppText>
-              {pickupStops.length > 0 ? (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                  {pickupStops.map((stop) => (
-                    <Chip
-                      key={stop.id}
-                      label={stop.label}
-                      active={selectedPickupStopId === stop.id}
-                      onPress={() => setSelectedPickupStopId((current) => (current === stop.id ? null : stop.id))}
-                    />
-                  ))}
-                </View>
-              ) : (
-                <AppText color={colors.danger} variant="caption">
-                  This trip has no valid pickup points — contact the driver.
-                </AppText>
-              )}
-            </View>
-
-            <View style={{ marginBottom: spacing.md }}>
-              <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-                Drop-off point
-              </AppText>
-              {dropoffStops.length > 0 ? (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                  {dropoffStops.map((stop) => (
-                    <Chip
-                      key={stop.id}
-                      label={stop.label}
-                      active={selectedDropoffStopId === stop.id}
-                      onPress={() => setSelectedDropoffStopId((current) => (current === stop.id ? null : stop.id))}
-                    />
-                  ))}
-                </View>
-              ) : (
-                <AppText color={colors.danger} variant="caption">
-                  This trip has no valid drop-off points — contact the driver.
-                </AppText>
-              )}
-            </View>
-
-            <Controller
-              control={control}
-              name="pickupNote"
-              render={({ field }) => (
-                <AppInput
-                  label="Pickup note (optional)"
-                  placeholder="e.g. Near the mosque, not the main gate"
-                  value={field.value}
-                  onChangeText={field.onChange}
-                  error={errors.pickupNote?.message}
+        <View style={{ marginBottom: spacing.md }}>
+          <AppText variant="label" style={{ marginBottom: spacing.xs }}>
+            Drop-off point
+          </AppText>
+          {dropoffStops.length > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {dropoffStops.map((stop) => (
+                <Chip
+                  key={stop.id}
+                  label={stop.label}
+                  active={selectedDropoffStopId === stop.id}
+                  onPress={() => setSelectedDropoffStopId((current) => (current === stop.id ? null : stop.id))}
                 />
-              )}
-            />
-            <Controller
-              control={control}
-              name="message"
-              render={({ field }) => (
-                <AppInput
-                  label="Message (optional)"
-                  placeholder="Introduce yourself or ask a question"
-                  value={field.value}
-                  onChangeText={field.onChange}
-                  multiline
-                  numberOfLines={4}
-                  style={{ minHeight: 90, textAlignVertical: 'top', paddingTop: spacing.sm }}
-                  error={errors.message?.message}
-                />
-              )}
-            />
-
-            {submitError ? (
-              <AppText color={colors.danger} style={{ marginBottom: spacing.sm }}>
-                {submitError}
-              </AppText>
-            ) : null}
-          </ScrollView>
-
-          <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
-            <View style={{ flex: 1 }}>
-              <AppButton title="Cancel" variant="secondary" onPress={onClose} />
+              ))}
             </View>
-            <View style={{ flex: 2 }}>
-              <AppButton
-                title="Send request"
-                loading={createInquiry.isPending}
-                disabled={!canSubmitStops || !stopsSelected}
-                onPress={handleSubmit(onSubmit)}
-              />
-            </View>
-          </View>
+          ) : (
+            <AppText color={colors.danger} variant="caption">
+              This trip has no valid drop-off points — contact the driver.
+            </AppText>
+          )}
+        </View>
+
+        <Controller
+          control={control}
+          name="pickupNote"
+          render={({ field }) => (
+            <AppInput
+              label="Pickup note (optional)"
+              placeholder="e.g. Near the mosque, not the main gate"
+              value={field.value}
+              onChangeText={field.onChange}
+              error={errors.pickupNote?.message}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="message"
+          render={({ field }) => (
+            <AppInput
+              label="Message (optional)"
+              placeholder="Introduce yourself or ask a question"
+              value={field.value}
+              onChangeText={field.onChange}
+              multiline
+              numberOfLines={4}
+              style={{ minHeight: 90, textAlignVertical: 'top', paddingTop: spacing.sm }}
+              error={errors.message?.message}
+            />
+          )}
+        />
+
+        {submitError ? (
+          <AppText color={colors.danger} style={{ marginBottom: spacing.sm }}>
+            {submitError}
+          </AppText>
+        ) : null}
+      </ScrollView>
+
+      <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
+        <View style={{ flex: 1 }}>
+          <AppButton title="Cancel" variant="secondary" onPress={onClose} />
+        </View>
+        <View style={{ flex: 2 }}>
+          <AppButton
+            title="Send request"
+            loading={createInquiry.isPending}
+            disabled={!canSubmitStops || !stopsSelected}
+            onPress={handleSubmit(onSubmit)}
+          />
         </View>
       </View>
-    </Modal>
+    </AppSheet>
   );
 }

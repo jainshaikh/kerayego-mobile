@@ -1,4 +1,5 @@
-import { Linking, ScrollView, View } from 'react-native';
+import type { ReactElement } from 'react';
+import { Linking, ScrollView, View, type RefreshControlProps } from 'react-native';
 import { Stack } from 'expo-router';
 
 import { AppButton, AppCard, AppScreen, AppText, Row, StatusBadge } from '../../../components/ui';
@@ -18,13 +19,20 @@ interface RiderPreLiveViewProps {
   availableActions: TripInquiryStatus[];
   riderActions: RiderTripActions;
   rideActionAvailability: RideActionAvailability;
+  refreshControl?: ReactElement<RefreshControlProps>;
 }
 
 // The rider's view of a seat request before the trip goes live: request
 // summary, driver contact once accepted, day-of status once the trip
 // starts, and geofence-gated arrive/complete actions if the trip somehow
 // becomes live-eligible without the tripLive tabbed layout kicking in yet.
-export function RiderPreLiveView({ inquiry, availableActions, riderActions, rideActionAvailability }: RiderPreLiveViewProps) {
+export function RiderPreLiveView({
+  inquiry,
+  availableActions,
+  riderActions,
+  rideActionAvailability,
+  refreshControl,
+}: RiderPreLiveViewProps) {
   const { colors, spacing } = useTheme();
   const { showArriveButton, canArrive, arriveDisabledReason, showCompleteButton, canComplete, completeDisabledReason } =
     rideActionAvailability;
@@ -32,7 +40,7 @@ export function RiderPreLiveView({ inquiry, availableActions, riderActions, ride
   return (
     <AppScreen edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: 'Trip request' }} />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={refreshControl}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <AppText variant="title" style={{ flex: 1, marginRight: spacing.md, textTransform: 'capitalize' }}>
             {titleCase(inquiry.trip.originCity)} → {titleCase(inquiry.trip.destinationCity)}

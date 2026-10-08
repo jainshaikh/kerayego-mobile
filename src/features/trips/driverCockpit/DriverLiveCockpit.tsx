@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Modal, View } from 'react-native';
+import { View } from 'react-native';
 
-import { AppButton, AppText, StatusBadge, TabBar, type TabBarItem } from '../../../components/ui';
+import { AppButton, AppSheet, AppText, StatusBadge, TabBar, type TabBarItem } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { ManifestRider, TripManifest } from '../../../api/trips.api';
 import type { TripDetail } from '../../../types/api.types';
@@ -310,31 +310,24 @@ export function DriverLiveCockpit({
       </View>
 
       {/* End-ride confirmation sheet — the ride's only End trigger/confirm-flow. */}
-      <Modal visible={actions.endConfirming} animationType="slide" transparent onRequestClose={() => actions.setEndConfirming(false)}>
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-          <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: spacing.lg }}>
-            <AppText variant="subtitle" style={{ marginBottom: spacing.xs }}>
-              End this ride?
-            </AppText>
-            <AppText muted variant="caption" style={{ marginBottom: spacing.md }}>
-              Any rider you haven&apos;t tapped pickup/drop-off for will be marked as completed automatically.
-            </AppText>
-            {actions.actionError ? (
-              <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.md }}>
-                {actions.actionError}
-              </AppText>
-            ) : null}
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <View style={{ flex: 1 }}>
-                <AppButton title="Not yet" variant="secondary" onPress={() => actions.setEndConfirming(false)} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <AppButton title="End ride" variant="danger" loading={actions.endTripPending} onPress={actions.handleEnd} />
-              </View>
-            </View>
+      <AppSheet visible={actions.endConfirming} onClose={() => actions.setEndConfirming(false)} title="End this ride?">
+        <AppText muted variant="caption" style={{ marginBottom: spacing.md }}>
+          Any rider you haven&apos;t tapped pickup/drop-off for will be marked as completed automatically.
+        </AppText>
+        {actions.actionError ? (
+          <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.md }}>
+            {actions.actionError}
+          </AppText>
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <AppButton title="Not yet" variant="secondary" onPress={() => actions.setEndConfirming(false)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppButton title="End ride" variant="danger" loading={actions.endTripPending} onPress={actions.handleEnd} />
           </View>
         </View>
-      </Modal>
+      </AppSheet>
 
       {/* Chat — modal sheet opened per-rider from the Riders tab, always
           mounted (visible toggled) so ChatModalSheet/ChatPanel never has to
