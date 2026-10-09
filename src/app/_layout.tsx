@@ -12,7 +12,6 @@ import { AuthProvider, useAuth } from '../auth/auth-context';
 import { configureNotificationHandler, subscribePushTokenRefresh } from '../features/notifications/pushToken';
 import { startPushTapCapture } from '../features/notifications/pushTapInbox';
 import { usePushReceivedInvalidation, usePushTapNavigation } from '../features/notifications/usePushTapNavigation';
-import { useLiveInquiryNotifications } from '../features/notifications/useLiveInquiryNotifications';
 import { activeRidePathname } from '../features/notifications/pushRouting';
 import { useMyActiveRide } from '../features/trips/queries';
 import { useGlobalOfflineQueueFlush } from '../features/trips/offlineSync';
@@ -69,7 +68,6 @@ function RootNavigator() {
   // navigator are both up.
   usePushTapNavigation({ ready: isReady, userId: signedInUserId, onAuthScreen });
   usePushReceivedInvalidation(signedInUserId);
-  useLiveInquiryNotifications(signedInUserId);
   usePushTokenRefresh(isAuthenticated);
   useActiveRideLock(isAuthenticated && !isBootstrapping);
   // Syncs the signed-in user's queued day-of-trip actions wherever they are
