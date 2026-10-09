@@ -30,6 +30,26 @@ function kindFromStatus(status: number): ApiErrorKind {
   return 'unknown';
 }
 
+// Kinds that say nothing about the request itself, so resending it unchanged
+// later can succeed: no answer at all (network), a server-side failure (5xx),
+// throttling (429), or a 401 whose token refresh didn't go through. 'unknown'
+// (a status kindFromStatus doesn't map, e.g. 408, or a non-HTTP error) is
+// retried too, rather than risk discarding something that would have worked —
+// a caller that retries must cap its attempts. validation/forbidden/
+// not_found/conflict are the server's verdict on the request: the same
+// request will get the same answer.
+const RETRYABLE_KINDS: ReadonlySet<ApiErrorKind> = new Set<ApiErrorKind>([
+  'network',
+  'server',
+  'rate_limited',
+  'unauthorized',
+  'unknown',
+]);
+
+export function isRetryableErrorKind(kind: ApiErrorKind): boolean {
+  return RETRYABLE_KINDS.has(kind);
+}
+
 const FRIENDLY_MESSAGES: Partial<Record<ApiErrorKind, string>> = {
   unauthorized: 'Your session has expired. Please log in again.',
   forbidden: "You don't have permission to do that.",

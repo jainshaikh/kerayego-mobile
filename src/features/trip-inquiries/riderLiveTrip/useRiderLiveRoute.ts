@@ -4,10 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 
 import { geoApi } from '../../../api/geo.api';
 import { tripsApi } from '../../../api/trips.api';
-import type { TripStop } from '../../../types/api.types';
+import type { TripInquiryStopRef } from '../../../api/trip-inquiries.api';
 import { useRideSocket } from '../../liveRide/socket';
 import { haversineDistanceMeters } from '../../liveRide/geo';
 import type { LiveTripStop } from '../../liveRide/components/LiveTripMap';
+import { hasCoordinates, orderRouteStops, routeSequence, type RouteStop } from './routeStops';
 
 // Live ETA-to-stop fetches are throttled to at most once per this interval,
 // regardless of how often the driver's position updates via the socket
@@ -17,22 +18,25 @@ import type { LiveTripStop } from '../../liveRide/components/LiveTripMap';
 const ETA_FETCH_THROTTLE_MS = 45_000;
 
 // This rider's own pickup/dropoff stop, as carried on TripInquiry — shared by
-// this hook and the rider live-view components below it so the four of them
-// can't drift apart.
-export interface RiderStop {
-  id: string;
-  label: string;
-  lat: number;
-  lng: number;
-}
+// this hook and the rider live-view components below it so they can't drift
+// apart. lat/lng are null for a stop typed as free text: every distance,
+// directions call and map pin below checks hasCoordinates first.
+export type RiderStop = TripInquiryStopRef;
 
 interface UseRiderLiveRouteParams {
   tripId: string | undefined;
-  tripLive: boolean;
+  // The ride is live for THIS rider — the ride lock (see isRideLocked): seat
+  // accepted, trip running, not yet dropped off or marked a no-show. Every
+  // GPS watch, socket subscription and ETA fetch here stops as soon as it
+  // turns false.
+  rideLive: boolean;
   pickupStop: RiderStop | null;
   dropoffStop: RiderStop | null;
   pickupConfirmedAt: string | null;
-  droppedOffAt: string | null;
+  // The trip's whole route, carried on the rider's own request by a newer
+  // backend; undefined from an older one, which falls back to the public
+  // trip fetch below.
+  routeStops: RouteStop[] | undefined;
 }
 
 export interface RiderLiveRoute {
@@ -46,16 +50,16 @@ export interface RiderLiveRoute {
   etaMinutes: number | null;
   driverDistanceKm: number | null;
   // Every OTHER stop on the whole trip besides this rider's own
-  // pickup/dropoff — the caller combines these with the rider's own two
-  // stops to build the map's full pin set (kept separate here since
-  // assembling that combined list needs riderConfirmedAtPickup, which lives
-  // in useRiderTripActions, not this hook).
+  // pickup/dropoff (only those with coordinates) — the caller combines these
+  // with the rider's own two stops to build the map's full pin set (kept
+  // separate here since those two pins' look depends on the ride phase).
   otherTripStops: LiveTripStop[];
+  // The rider's own stops' 1-based positions in route order.
+  pickupSequence: number;
   dropoffSequence: number;
-  tripStopsSorted: TripStop[];
+  // The whole route in visit order (pickups, then drop-offs).
+  tripStops: RouteStop[];
   tripStopsLoading: boolean;
-  vehicleColor: string | null;
-  vehicleYear: number | null;
 }
 
 /**
@@ -67,11 +71,11 @@ export interface RiderLiveRoute {
  */
 export function useRiderLiveRoute({
   tripId,
-  tripLive,
+  rideLive,
   pickupStop,
   dropoffStop,
   pickupConfirmedAt,
-  droppedOffAt,
+  routeStops,
 }: UseRiderLiveRouteParams): RiderLiveRoute {
   const { onLocationUpdate } = useRideSocket();
 
@@ -91,24 +95,21 @@ export function useRiderLiveRoute({
   // doesn't have to wait out the OTHER target's throttle window.
   const lastEtaFetchAtRef = useRef<{ pickup: number | null; dropoff: number | null }>({ pickup: null, dropoff: null });
 
-  // Full trip route (every pickup/dropoff stop across the whole carpool, not
-  // just this rider's own pickupStop/dropoffStop) — powers only the map's
-  // de-emphasized "other stops" pins, the Stops tab's overview list, and the
-  // Driver tab's vehicle color/year. Reuses the same public trip-detail
-  // endpoint already used elsewhere in this app for browsing/booking a trip
-  // — not a new backend surface. A failed or not-yet-loaded fetch just
-  // leaves those fields empty/null; it never blocks pickup/dropoff, ETA,
-  // chat, or cancellation.
-  const tripStopsQuery = useQuery({
+  // Older-backend fallback only: the whole route from the public trip
+  // detail endpoint. That endpoint 404s once a trip is IN_PROGRESS, so on
+  // such a backend this usually comes back empty — the Stops tab says so,
+  // and nothing else depends on it. A newer backend carries the route on
+  // the rider's own request (routeStops), which needs no second call.
+  const fallbackStopsQuery = useQuery({
     queryKey: ['tripStops', tripId],
     queryFn: () => tripsApi.getOne(tripId ?? ''),
-    enabled: tripLive && !!tripId,
+    enabled: rideLive && !!tripId && routeStops === undefined,
   });
 
-  // Foreground-only location watch, active only while the trip is actually
-  // running for this rider's confirmed seat.
+  // Foreground-only location watch, active only while the ride is live for
+  // this rider.
   useEffect(() => {
-    if (!tripLive) return;
+    if (!rideLive) return;
 
     let subscription: Location.LocationSubscription | null = null;
     let cancelled = false;
@@ -132,21 +133,22 @@ export function useRiderLiveRoute({
       subscription = sub;
     })();
 
-    // Clears any last-known fix once the trip stops being live (seat
-    // cancelled, trip ended, or this screen unmounts) — the geofence-gated
-    // buttons never trust a reading from a watch that's no longer running.
+    // Clears any last-known fix once the ride stops being live (dropped off,
+    // marked a no-show, seat cancelled, trip ended, or this screen unmounts)
+    // — the geofence-gated buttons never trust a reading from a watch that's
+    // no longer running.
     return () => {
       cancelled = true;
       subscription?.remove();
       setPosition(null);
     };
-  }, [tripLive]);
+  }, [rideLive]);
 
   // Maintains the driver's last-known position from the socket while the
-  // trip is live — cleared on cleanup so a stale dot never lingers once the
+  // ride is live — cleared on cleanup so a stale dot never lingers once the
   // ride stops being live or this screen unmounts.
   useEffect(() => {
-    if (!tripLive) return;
+    if (!rideLive) return;
 
     const unsubscribe = onLocationUpdate((payload) => {
       if (payload.tripId !== tripId) return;
@@ -159,22 +161,19 @@ export function useRiderLiveRoute({
       setDriverPosition(null);
       setDriverLastUpdateAt(null);
     };
-    // onLocationUpdate omitted deliberately: useRideSocket() returns a new
-    // function identity every render (it reads live module state, not a
-    // stale closure), so including it would resubscribe on every render
-    // instead of only when tripLive/tripId change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripLive, tripId]);
+    // onLocationUpdate is a stable module-level function (socket.ts), so in
+    // practice this re-runs only when rideLive/tripId change.
+  }, [rideLive, tripId, onLocationUpdate]);
 
   // Fetches the trip's whole pickup→dropoff route line ONCE, the first time
-  // the trip is live — this is just map context for the rider (who isn't
+  // the ride is live — this is just map context for the rider (who isn't
   // navigating), so it's never re-fetched as the driver's position updates.
   // hasFetchedRouteRef guards the actual network call so remounts/refetches
-  // can't trigger it again. A failed call or "no route" response just leaves
-  // the map without a route line — never a crash, never something that
-  // blocks ride actions.
+  // can't trigger it again. Needs both stops' coordinates; a failed call or
+  // "no route" response just leaves the map without a route line — never a
+  // crash, never something that blocks ride actions.
   useEffect(() => {
-    if (!tripLive || !pickupStop || !dropoffStop || hasFetchedRouteRef.current) return;
+    if (!rideLive || !hasCoordinates(pickupStop) || !hasCoordinates(dropoffStop) || hasFetchedRouteRef.current) return;
     hasFetchedRouteRef.current = true;
 
     let cancelled = false;
@@ -190,21 +189,21 @@ export function useRiderLiveRoute({
     return () => {
       cancelled = true;
     };
-  }, [tripLive, pickupStop, dropoffStop]);
+  }, [rideLive, pickupStop, dropoffStop]);
 
   // Clears the last-known ETA whenever the rider's "next stop" target
-  // switches (pickup confirmed → now targeting dropoff; dropped off → no
-  // more ETA needed) so a stale pickup-context number never gets relabelled
-  // as a dropoff one (or vice versa) while the next real fetch is in flight.
-  // Wrapped in an async IIFE — a bare synchronous setState at the top of an
-  // effect body triggers this project's react-hooks/set-state-in-effect lint
-  // rule.
+  // switches (pickup confirmed → now targeting dropoff) or the ride stops
+  // being live, so a stale pickup-context number never gets relabelled as a
+  // dropoff one (or survives into a later live stretch) while the next real
+  // fetch is in flight. Wrapped in an async IIFE — a bare synchronous
+  // setState at the top of an effect body triggers this project's
+  // react-hooks/set-state-in-effect lint rule.
   useEffect(() => {
     (async () => {
       setEtaMinutes(null);
       setDriverDistanceKm(null);
     })();
-  }, [pickupConfirmedAt, droppedOffAt]);
+  }, [pickupConfirmedAt, rideLive]);
 
   // Live ETA from the driver's current position to the rider's next stop —
   // reuses the SAME route-directions call as the one-time whole-route fetch
@@ -218,11 +217,11 @@ export function useRiderLiveRoute({
   // and returns immediately with no network call. This is what keeps the ~4s
   // GPS cadence from turning into an unbounded per-tick API cost.
   useEffect(() => {
-    if (!tripLive || !driverPosition || droppedOffAt) return;
+    if (!rideLive || !driverPosition) return;
 
     const target: 'pickup' | 'dropoff' = pickupConfirmedAt ? 'dropoff' : 'pickup';
     const destStop = target === 'pickup' ? pickupStop : dropoffStop;
-    if (!destStop) return;
+    if (!hasCoordinates(destStop)) return;
 
     const now = Date.now();
     const lastFetchedAt = lastEtaFetchAtRef.current[target];
@@ -246,48 +245,40 @@ export function useRiderLiveRoute({
     return () => {
       cancelled = true;
     };
-  }, [tripLive, driverPosition, pickupConfirmedAt, droppedOffAt, pickupStop, dropoffStop]);
+  }, [rideLive, driverPosition, pickupConfirmedAt, pickupStop, dropoffStop]);
 
+  const here = position ? { lat: position.coords.latitude, lng: position.coords.longitude } : null;
   const pickupDistanceM =
-    position && pickupStop
-      ? haversineDistanceMeters(
-          { lat: position.coords.latitude, lng: position.coords.longitude },
-          { lat: pickupStop.lat, lng: pickupStop.lng },
-        )
-      : null;
+    here && hasCoordinates(pickupStop) ? haversineDistanceMeters(here, { lat: pickupStop.lat, lng: pickupStop.lng }) : null;
   const dropoffDistanceM =
-    position && dropoffStop
-      ? haversineDistanceMeters(
-          { lat: position.coords.latitude, lng: position.coords.longitude },
-          { lat: dropoffStop.lat, lng: dropoffStop.lng },
-        )
+    here && hasCoordinates(dropoffStop)
+      ? haversineDistanceMeters(here, { lat: dropoffStop.lat, lng: dropoffStop.lng })
       : null;
 
-  // Whole-route stops, in visit order — used only for the map's
-  // de-emphasized "other stops" pins and the Stops tab's overview list.
-  // Empty whenever the fetch hasn't resolved (loading, disabled, or failed);
-  // every use site tolerates that gracefully.
-  const tripStopsSorted = (tripStopsQuery.data?.stops ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
-  const numberedTripStops = tripStopsSorted.map((stop, index) => ({ stop, sequence: index + 1 }));
-  const dropoffRealSequence = dropoffStop
-    ? numberedTripStops.find(({ stop }) => stop.id === dropoffStop.id)?.sequence
-    : undefined;
-  const dropoffSequence = Math.max(2, dropoffRealSequence ?? 2);
+  // Whole-route stops, in visit order — the map's de-emphasized "other
+  // stops" pins, the Stops tab's overview list and the rider's own pins'
+  // numbers. Empty whenever neither source has them (a legacy trip, or the
+  // fallback fetch loading/failed); every use site tolerates that.
+  const tripStops = orderRouteStops<RouteStop>(routeStops ?? fallbackStopsQuery.data?.stops ?? []);
+  const pickupSequence = routeSequence(tripStops, pickupStop?.id) ?? 1;
+  const dropoffSequence = Math.max(2, routeSequence(tripStops, dropoffStop?.id) ?? 2);
 
   // Every OTHER stop on the whole trip (not this rider's own pickup/dropoff) —
   // rendered as small, muted, unlabeled pins so the full route shape is
   // visible on the map without competing with the rider's own two stops.
-  const otherTripStops: LiveTripStop[] = numberedTripStops
-    .filter(({ stop }) => stop.id !== pickupStop?.id && stop.id !== dropoffStop?.id && stop.lat != null && stop.lng != null)
-    .map(({ stop, sequence }) => ({
+  const otherTripStops: LiveTripStop[] = [];
+  tripStops.forEach((stop, index) => {
+    if (stop.id === pickupStop?.id || stop.id === dropoffStop?.id || !hasCoordinates(stop)) return;
+    otherTripStops.push({
       id: stop.id,
       type: stop.type,
       label: stop.label,
-      lat: stop.lat as number,
-      lng: stop.lng as number,
-      sequence,
-      status: 'upcoming' as const,
-    }));
+      lat: stop.lat,
+      lng: stop.lng,
+      sequence: index + 1,
+      status: stop.arrivedAt ? 'reached' : 'upcoming',
+    });
+  });
 
   return {
     position,
@@ -300,10 +291,9 @@ export function useRiderLiveRoute({
     etaMinutes,
     driverDistanceKm,
     otherTripStops,
+    pickupSequence,
     dropoffSequence,
-    tripStopsSorted,
-    tripStopsLoading: tripStopsQuery.isLoading,
-    vehicleColor: tripStopsQuery.data?.userVehicle.color ?? null,
-    vehicleYear: tripStopsQuery.data?.userVehicle.year ?? null,
+    tripStops,
+    tripStopsLoading: routeStops === undefined && fallbackStopsQuery.isLoading,
   };
 }

@@ -10,28 +10,35 @@ import type { UserVehicleImageInput } from '../../../api/user-vehicles.api';
 const MAX_PHOTOS = 6;
 
 interface VehiclePhotosFieldProps {
-  entityId: string; // client-generated vehicle id — groups uploads into one S3 folder
+  // The vehicle's id (client-generated when registering, the existing id when
+  // editing) — every photo lands in its user-vehicles/{id}/photos/ folder.
+  entityId: string;
   images: UserVehicleImageInput[];
   onChange: (images: UserVehicleImageInput[]) => void;
+  // True while a photo is being picked/uploaded, so the form can hold submit.
+  onUploadingChange?: (uploading: boolean) => void;
 }
 
 // First image is the poster/cover shown as the card thumbnail and trip detail hero.
-export function VehiclePhotosField({ entityId, images, onChange }: VehiclePhotosFieldProps) {
+export function VehiclePhotosField({ entityId, images, onChange, onUploadingChange }: VehiclePhotosFieldProps) {
   const { colors, radii, spacing } = useTheme();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleAdd = async () => {
+  // A promise chain rather than try/finally, which the React Compiler can't compile.
+  const handleAdd = () => {
     setError(null);
     setUploading(true);
-    try {
-      const uploaded = await pickAndUploadImage('user_vehicle_photo', undefined, entityId);
-      if (uploaded) onChange([...images, { url: uploaded.url, publicId: uploaded.publicId, width: uploaded.width, height: uploaded.height }]);
-    } catch (e) {
-      setError(normalizeApiError(e).message);
-    } finally {
-      setUploading(false);
-    }
+    onUploadingChange?.(true);
+    pickAndUploadImage('user_vehicle_photo', undefined, entityId)
+      .then((uploaded) => {
+        if (uploaded) onChange([...images, { url: uploaded.url, publicId: uploaded.publicId, width: uploaded.width, height: uploaded.height }]);
+      })
+      .catch((e: unknown) => setError(normalizeApiError(e).message))
+      .finally(() => {
+        setUploading(false);
+        onUploadingChange?.(false);
+      });
   };
 
   const removeAt = (index: number) => {

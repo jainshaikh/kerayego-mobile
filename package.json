@@ -1,6 +1,6 @@
 {
   "name": "kerayego-mobile",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "version": "1.0.0",
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.4.3",
@@ -30,6 +30,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
     "expo-system-ui": "~57.0.2",
+    "expo-task-manager": "~57.0.21",
     "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",

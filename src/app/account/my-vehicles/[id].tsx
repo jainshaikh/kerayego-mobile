@@ -1,32 +1,51 @@
 import { View } from 'react-native';
 import { Image } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { useUserVehicle } from '../../../features/user-vehicles/queries';
-import { AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, Row, StatusBadge } from '../../../components/ui';
+import {
+  USER_VEHICLE_DOCUMENT_LABELS,
+  USER_VEHICLE_DOCUMENT_TYPES,
+  documentReviewBadge,
+  documentsByType,
+} from '../../../features/user-vehicles/userVehicleDraft';
+import {
+  AppButton,
+  AppCard,
+  AppRefreshControl,
+  AppScreen,
+  AppText,
+  ErrorState,
+  LoadingState,
+  Row,
+  StatusBadge,
+} from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
-import { userVehicleStatusMeta } from '../../../types/enums';
+import { MARKETS } from '../../../constants/markets';
+import { DocumentStatus, UserVehicleStatus, userVehicleStatusMeta } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
-
-const DOCUMENT_LABELS: Record<string, string> = {
-  ID_DOCUMENT: 'CNIC / National ID',
-  ID_DOCUMENT_FRONT: 'CNIC / National ID — front',
-  ID_DOCUMENT_BACK: 'CNIC / National ID — back',
-  DRIVING_LICENSE: 'Driving license',
-  VEHICLE_REGISTRATION: 'Vehicle registration',
-};
 
 export default function UserVehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors, spacing } = useTheme();
-  const { data: vehicle, isLoading, isError, refetch } = useUserVehicle(id);
+  const { colors, spacing, tones } = useTheme();
+  const { data: vehicle, isError, refetch } = useUserVehicle(id);
   const refresh = usePullToRefresh(refetch);
 
-  if (isLoading) return <LoadingState label="Loading vehicle..." />;
-  if (isError || !vehicle) return <ErrorState message="Couldn't load this vehicle." onRetry={refetch} />;
+  // A failed background refetch (a pull-to-refresh offline, or the one that
+  // follows a save) keeps showing the vehicle already loaded.
+  if (!vehicle) {
+    return isError ? (
+      <ErrorState message="Couldn't load this vehicle." onRetry={refetch} />
+    ) : (
+      <LoadingState label="Loading vehicle..." />
+    );
+  }
 
   const statusMeta = userVehicleStatusMeta[vehicle.status];
+  const documents = documentsByType(vehicle.documents);
+  // Edit/resubmit is offered exactly where PATCH /my/vehicles/:id accepts it.
+  const openEdit = () => router.push({ pathname: '/account/my-vehicles/edit/[id]', params: { id: vehicle.id } });
 
   return (
     <AppScreen
@@ -41,14 +60,31 @@ export default function UserVehicleDetailScreen() {
         <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
       </View>
 
-      {vehicle.rejectionReason ? (
+      {vehicle.status === UserVehicleStatus.REJECTED ? (
+        <AppCard style={{ marginBottom: spacing.lg, backgroundColor: tones.danger.bg, borderColor: colors.danger }}>
+          <AppText variant="label" color={tones.danger.fg}>
+            Not approved
+          </AppText>
+          {vehicle.rejectionReason ? (
+            <AppText color={tones.danger.fg} style={{ marginTop: spacing.xs }}>
+              {vehicle.rejectionReason}
+            </AppText>
+          ) : null}
+          <AppText variant="caption" color={tones.danger.fg} style={{ marginTop: spacing.sm }}>
+            Fix the details, photos or documents and resubmit — our team reviews it again.
+          </AppText>
+          <AppButton title="Edit & resubmit" onPress={openEdit} style={{ marginTop: spacing.md }} />
+        </AppCard>
+      ) : null}
+
+      {vehicle.status === UserVehicleStatus.PENDING_REVIEW ? (
         <AppCard style={{ marginBottom: spacing.lg }}>
-          <AppText variant="label" color={colors.danger}>
-            Rejection reason
+          <AppText variant="label">Under review</AppText>
+          <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
+            Our team is checking your documents. Spotted a mistake? You can still edit it — saving puts it back at the
+            end of the review queue.
           </AppText>
-          <AppText muted style={{ marginTop: spacing.xs }}>
-            {vehicle.rejectionReason}
-          </AppText>
+          <AppButton title="Edit" variant="outline" onPress={openEdit} style={{ marginTop: spacing.md }} />
         </AppCard>
       ) : null}
 
@@ -56,6 +92,7 @@ export default function UserVehicleDetailScreen() {
         {vehicle.year ? <Row label="Year" value={String(vehicle.year)} /> : null}
         {vehicle.color ? <Row label="Color" value={titleCase(vehicle.color)} /> : null}
         <Row label="Plate number" value={vehicle.plateNumber} />
+        {vehicle.country ? <Row label="Country" value={MARKETS[vehicle.country]?.label ?? vehicle.country} /> : null}
       </AppCard>
 
       {vehicle.images.length > 0 ? (
@@ -93,22 +130,41 @@ export default function UserVehicleDetailScreen() {
       <AppText variant="label" style={{ marginBottom: spacing.sm }}>
         Documents
       </AppText>
-      {vehicle.documents.map((doc) => (
-        <AppCard key={doc.id} style={{ marginBottom: spacing.sm }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <AppText variant="label">{DOCUMENT_LABELS[doc.documentType] ?? doc.documentType}</AppText>
-            <StatusBadge
-              label={doc.status}
-              tone={doc.status === 'APPROVED' ? 'success' : doc.status === 'REJECTED' ? 'danger' : 'warning'}
-            />
-          </View>
-          {doc.rejectionReason ? (
-            <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
-              {doc.rejectionReason}
-            </AppText>
-          ) : null}
-        </AppCard>
-      ))}
+      {USER_VEHICLE_DOCUMENT_TYPES.map((type) => {
+        const doc = documents[type];
+        if (!doc) {
+          // Registration requires all four, but an older record may lack one —
+          // editing the vehicle is how it gets added.
+          return (
+            <AppCard key={type} style={{ marginBottom: spacing.sm }}>
+              <AppText variant="label">{USER_VEHICLE_DOCUMENT_LABELS[type]}</AppText>
+              <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
+                Not uploaded
+              </AppText>
+            </AppCard>
+          );
+        }
+        const badge = documentReviewBadge(doc, vehicle.status);
+        const rejected = doc.status === DocumentStatus.REJECTED;
+        return (
+          <AppCard
+            key={doc.id}
+            style={{ marginBottom: spacing.sm, ...(rejected ? { borderColor: colors.danger } : null) }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm }}>
+              <AppText variant="label" style={{ flex: 1 }}>
+                {USER_VEHICLE_DOCUMENT_LABELS[type]}
+              </AppText>
+              {badge ? <StatusBadge label={badge.label} tone={badge.tone} /> : null}
+            </View>
+            {doc.rejectionReason ? (
+              <AppText variant="caption" color={rejected ? colors.danger : undefined} muted style={{ marginTop: spacing.xs }}>
+                {doc.rejectionReason}
+              </AppText>
+            ) : null}
+          </AppCard>
+        );
+      })}
     </AppScreen>
   );
 }

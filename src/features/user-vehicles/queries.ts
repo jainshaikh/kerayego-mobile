@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { userVehiclesApi, type CreateUserVehiclePayload } from '../../api/user-vehicles.api';
+import {
+  userVehiclesApi,
+  type CreateUserVehiclePayload,
+  type UpdateUserVehiclePayload,
+} from '../../api/user-vehicles.api';
 
 export function useMyUserVehicles() {
   return useQuery({
@@ -28,5 +32,19 @@ export function useCreateUserVehicle() {
   return useMutation({
     mutationFn: (data: CreateUserVehiclePayload) => userVehiclesApi.create(data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['userVehicles'] }),
+  });
+}
+
+export function useUpdateUserVehicle(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateUserVehiclePayload) => userVehiclesApi.update(id, data),
+    onSuccess: (vehicle) => {
+      // The response is GET :id's shape, so the detail screen shows the
+      // resubmitted (PENDING_REVIEW) vehicle straight away; the lists refetch
+      // in the background (not awaited, so the screen can leave right away).
+      queryClient.setQueryData(['userVehicles', id], vehicle);
+      void queryClient.invalidateQueries({ queryKey: ['userVehicles'] });
+    },
   });
 }

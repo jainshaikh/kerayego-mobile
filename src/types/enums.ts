@@ -57,10 +57,21 @@ export enum DocumentType {
   TRADE_LICENSE = 'TRADE_LICENSE',
   OWNERSHIP_PROOF = 'OWNERSHIP_PROOF',
   ID_DOCUMENT = 'ID_DOCUMENT',
+  // CNIC / national ID front and back — the two ID sides a personal vehicle carries.
+  ID_DOCUMENT_FRONT = 'ID_DOCUMENT_FRONT',
+  ID_DOCUMENT_BACK = 'ID_DOCUMENT_BACK',
   DRIVING_LICENSE = 'DRIVING_LICENSE',
   VEHICLE_REGISTRATION = 'VEHICLE_REGISTRATION',
   VEHICLE_INSURANCE = 'VEHICLE_INSURANCE',
   OTHER = 'OTHER',
+}
+
+// The country a personal vehicle (and so every trip posted with it) belongs
+// to — drives the trip's currency. See constants/markets.ts.
+export enum Market {
+  PK = 'PK',
+  SA = 'SA',
+  AE = 'AE',
 }
 
 export enum Transmission {
@@ -217,6 +228,20 @@ export const userVehicleStatusMeta: Record<
   [UserVehicleStatus.SUSPENDED]: { label: 'Suspended', tone: 'danger' },
 };
 
+// The statuses PATCH /my/vehicles/:id accepts (backend
+// OWNER_EDITABLE_USER_VEHICLE_STATUSES): a rejected vehicle is fixed and
+// resubmitted, a pending one corrected. APPROVED (what riders booked) and
+// SUSPENDED (the admin's call) answer 409.
+const OWNER_EDITABLE_USER_VEHICLE_STATUSES: readonly UserVehicleStatus[] = [
+  UserVehicleStatus.REJECTED,
+  UserVehicleStatus.PENDING_REVIEW,
+];
+
+/** Whether the owner may edit (and so (re)submit) a personal vehicle in this status. */
+export function canOwnerEditUserVehicle(status: UserVehicleStatus): boolean {
+  return OWNER_EDITABLE_USER_VEHICLE_STATUSES.includes(status);
+}
+
 /** A trip can only be edited/cancelled by its poster while it's still ACTIVE (mirrors backend). */
 export function tripPosterActions(
   status: TripStatus,
@@ -237,18 +262,28 @@ export const tripInquiryStatusMeta: Record<
   [TripInquiryStatus.EXPIRED]: { label: 'Expired', tone: 'neutral' },
 };
 
+// Trip statuses on which the backend refuses to cancel a confirmed seat
+// (TripInquiriesService.updateStatus, SEAT_CANCEL_BLOCKED_TRIP_STATUSES).
+const SEAT_CANCEL_BLOCKED_TRIP_STATUSES: readonly TripStatus[] = [
+  TripStatus.COMPLETED,
+  TripStatus.CANCELLED,
+  TripStatus.SUSPENDED,
+];
+
 // Unlike BookingRequest, a trip's poster can be a plain USER (any user may post
 // a trip), so this is identity-based rather than role-based — mirrors the
 // backend's TripInquiriesService authorization exactly. A confirmed
-// (ACCEPTED) seat can still be cancelled by the rider — it frees the seat and
-// notifies the poster; the backend blocks it once the trip has departed.
+// (ACCEPTED) seat can still be cancelled by the rider — it notifies the
+// poster, and gives the seat back while the trip is still ACTIVE. The backend
+// refuses it once the trip is completed, cancelled or suspended (pass
+// `tripStatus` to hide it then) and after departureAt (a 400 the caller shows).
 export function tripInquiryRiderActions(
   status: TripInquiryStatus,
+  tripStatus?: TripStatus,
 ): TripInquiryStatus[] {
-  if (
-    status === TripInquiryStatus.PENDING ||
-    status === TripInquiryStatus.ACCEPTED
-  ) {
+  if (status === TripInquiryStatus.PENDING) return [TripInquiryStatus.CANCELLED];
+  if (status === TripInquiryStatus.ACCEPTED) {
+    if (tripStatus && SEAT_CANCEL_BLOCKED_TRIP_STATUSES.includes(tripStatus)) return [];
     return [TripInquiryStatus.CANCELLED];
   }
   return [];

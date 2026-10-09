@@ -14,11 +14,18 @@ import { useDriverLocationWatch } from '../../../features/trips/driverCockpit/us
 import { useDriverStopProgress } from '../../../features/trips/driverCockpit/useDriverStopProgress';
 import { useDriverTripActions } from '../../../features/trips/driverCockpit/useDriverTripActions';
 import { useDriverChatInbox } from '../../../features/trips/driverCockpit/useDriverChatInbox';
+import { useDriverBackgroundLocation } from '../../../features/liveRide/backgroundLocation/useDriverBackgroundLocation';
 import { DriverLiveCockpit } from '../../../features/trips/driverCockpit/DriverLiveCockpit';
 import { DriverPostedTripView } from '../../../features/trips/driverCockpit/DriverPostedTripView';
+import { CHAT_INQUIRY_PARAM } from '../../../features/notifications/pushRouting';
+import { driverChatLinkDecision } from '../../../features/notifications/chatDeepLink';
+import { useChatDeepLink } from '../../../features/notifications/useChatDeepLink';
+import { ChatLinkUnavailableSheet } from '../../../features/notifications/ChatLinkUnavailableSheet';
 
 export default function MyTripDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // chatInquiryId: set by a tapped chat push (features/notifications) — the
+  // rider whose thread to open.
+  const { id, chatInquiryId } = useLocalSearchParams<{ id: string; chatInquiryId?: string }>();
   const { user } = useAuth();
   const { data: trip, isLoading, isError, refetch } = useMyTrip(id);
   const {
@@ -31,8 +38,10 @@ export default function MyTripDetailScreen() {
   // doesn't gate this on trip status either — so a manifest fetched earlier
   // while online is already sitting in cache if "Start trip" is later tapped
   // offline. Only the cockpit's own visibility is gated on effective status.
-  const { data: manifest, isLoading: manifestLoading } = useTripManifest(id);
-  const offlineQueue = useOfflineTripQueue(id);
+  // dataUpdatedAt: when this device received it — anchors the manifest's
+  // serverNow for the cockpit's stop wait timers and no-show countdowns.
+  const { data: manifest, isLoading: manifestLoading, dataUpdatedAt: manifestReceivedAt } = useTripManifest(id);
+  const offlineQueue = useOfflineTripQueue(id, user?.id);
   const { isConnected } = useRideSocket();
 
   const driverActions = useDriverTripActions(id as string, offlineQueue);
@@ -48,13 +57,48 @@ export default function MyTripDetailScreen() {
   useTripRoomPresence(id, effectiveInProgress);
   useBlockBackButtonWhileActive(effectiveInProgress);
   const location = useDriverLocationWatch(id as string, effectiveInProgress);
+  // Keeps the driver's location reaching riders once they leave the app —
+  // from the server's own IN_PROGRESS only (never an optimistic offline
+  // start: the location endpoint refuses fixes until the start has synced).
+  const backgroundLocation = useDriverBackgroundLocation({
+    tripId: id as string,
+    userId: user?.id,
+    serverInProgress: trip?.status === TripStatus.IN_PROGRESS,
+    tripOver:
+      effectiveCompleted ||
+      trip?.status === TripStatus.CANCELLED ||
+      trip?.status === TripStatus.SUSPENDED,
+    permissionGranted: location.permissionGranted,
+    locationDenied: location.locationDenied,
+  });
   const stopProgress = useDriverStopProgress({
     manifest,
+    manifestReceivedAt,
     optimisticEvents: driverActions.optimisticEvents,
+    noShowIds: driverActions.noShowIds,
+    arrivedStopIds: driverActions.arrivedStopIds,
     currentPosition: location.currentPosition,
     active: effectiveInProgress,
   });
   const chat = useDriverChatInbox(user?.id);
+  const showManifest = effectiveInProgress || effectiveCompleted;
+  // A chat push's deep link: opens that rider's thread once the cockpit can
+  // show it, or says why it can't (the trip hasn't started, the seat is gone).
+  const chatLink = useChatDeepLink(
+    CHAT_INQUIRY_PARAM,
+    chatInquiryId,
+    chatInquiryId
+      ? driverChatLinkDecision({
+          requestedInquiryId: chatInquiryId,
+          tripStatus: trip?.status,
+          cockpitShown: showManifest,
+          manifestRiders: manifest?.riders,
+          manifestLoading,
+          inboxRiderName: inquiriesRes?.data.find((inquiry) => inquiry.id === chatInquiryId)?.user.name ?? null,
+        })
+      : { kind: 'wait' },
+    (target) => chat.openChat(target.tripInquiryId, target.otherPartyName),
+  );
   // Only wired into the pre-live posted-trip view below — the live cockpit is
   // kept current by the socket, the offline queue, and post-action refetches.
   const refresh = usePullToRefresh(() => Promise.all([refetch(), refetchInquiries()]));
@@ -62,10 +106,11 @@ export default function MyTripDetailScreen() {
   if (isLoading) return <LoadingState label="Loading trip..." />;
   if (isError || !trip) return <ErrorState message="Couldn't load this trip." onRetry={refetch} />;
 
-  const showManifest = effectiveInProgress || effectiveCompleted;
-
   return (
-    <AppScreen edges={['left', 'right', 'bottom']}>
+    // While the ride lock hides the native header there's nothing above the
+    // cockpit to clear the status bar / notch (the app draws edge-to-edge),
+    // so the screen takes the top safe-area edge itself.
+    <AppScreen edges={effectiveInProgress ? ['top', 'left', 'right', 'bottom'] : ['left', 'right', 'bottom']}>
       {/* Ride lock: the hardware/gesture back effect above already swallows
           the physical back button, but the native stack header's own back
           chevron and iOS/Android swipe-back gesture are a SEPARATE exit path
@@ -85,6 +130,7 @@ export default function MyTripDetailScreen() {
           isConnected={isConnected}
           stopProgress={stopProgress}
           location={location}
+          backgroundLocation={backgroundLocation}
           actions={driverActions}
           chat={chat}
           offlineQueue={offlineQueue}
@@ -102,6 +148,7 @@ export default function MyTripDetailScreen() {
           refreshControl={<AppRefreshControl {...refresh} />}
         />
       )}
+      <ChatLinkUnavailableSheet notice={chatLink.notice} onClose={chatLink.dismissNotice} />
     </AppScreen>
   );
 }

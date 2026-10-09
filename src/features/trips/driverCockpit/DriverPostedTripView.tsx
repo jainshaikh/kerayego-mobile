@@ -12,6 +12,7 @@ import { TripInquiryStatus, TripStatus, tripInquiryStatusMeta, tripPosterActions
 import { formatDate, formatPrice, titleCase } from '../../../utils/format';
 import type { DriverTripActions } from './useDriverTripActions';
 import type { OfflineTripQueue } from '../offlineSync';
+import { OfflineQueueNotice } from '../components/OfflineQueueNotice';
 
 interface DriverPostedTripViewProps {
   trip: TripDetail;
@@ -56,15 +57,9 @@ export function DriverPostedTripView({
         <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
       </View>
 
-      {offlineQueue.pendingCount > 0 ? (
-        <AppCard style={{ marginTop: spacing.md, backgroundColor: colors.surfaceAlt }}>
-          <AppText variant="caption">
-            {offlineQueue.flushing
-              ? 'Syncing…'
-              : `${offlineQueue.pendingCount} action${offlineQueue.pendingCount !== 1 ? 's' : ''} queued — no connection yet. They'll sync automatically once you're back online.`}
-          </AppText>
-        </AppCard>
-      ) : null}
+      {/* Also where a discarded queued Start is reported — the trip has
+          rolled back to this pre-start view by then. */}
+      <OfflineQueueNotice queue={offlineQueue} />
 
       {trip.rejectionReason ? (
         <AppCard style={{ marginTop: spacing.lg }}>

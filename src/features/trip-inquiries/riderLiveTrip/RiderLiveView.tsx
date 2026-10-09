@@ -1,20 +1,27 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
-import { Stack } from 'expo-router';
 
-import { AppButton, AppCard, AppScreen, AppText, StatusBadge, TabBar, type TabBarItem } from '../../../components/ui';
+import { AppButton, AppCard, AppText, StatusBadge, TabBar, type TabBarItem } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripInquiry } from '../../../api/trip-inquiries.api';
 import { TripInquiryStatus } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
 import { LiveTripMap, type LiveTripStop } from '../../liveRide/components/LiveTripMap';
 import { ChatModalSheet } from '../../liveRide/components/ChatModalSheet';
-import { openMapsNavigation } from '../../liveRide/openMapsNavigation';
+import { mapsNavigationUrl, openMapsNavigation } from '../../liveRide/openMapsNavigation';
 import { formatDistanceShort } from '../../liveRide/geo';
+import type { ServerClock } from '../../trips/driverCockpit/noShow';
+import type { OfflineTripQueue } from '../../trips/offlineSync';
+import { OfflineQueueNotice } from '../../trips/components/OfflineQueueNotice';
 import { formatEtaLabel } from './formatEtaLabel';
 import type { RiderLiveRoute, RiderStop } from './useRiderLiveRoute';
 import type { RiderTripActions } from './useRiderTripActions';
 import type { RideActionAvailability } from './rideActionAvailability';
+import { deriveRiderRidePhase, liveRideCopy } from './riderTripState';
+import { hasCoordinates } from './routeStops';
+import { driverCallNumber } from './tripDisplay';
+import { DriverArrivedAgo } from './DriverArrivedAgo';
+import { RiderConfirmSheet } from './RiderConfirmSheet';
 import { StopsTab } from './StopsTab';
 import { DriverTab } from './DriverTab';
 import { SummaryTab } from './SummaryTab';
@@ -31,119 +38,145 @@ interface RiderLiveViewProps {
   inquiry: TripInquiry;
   pickupStop: RiderStop | null;
   dropoffStop: RiderStop | null;
-  dropoffSequence: number;
   availableActions: TripInquiryStatus[];
   isConnected: boolean;
   route: RiderLiveRoute;
   riderActions: RiderTripActions;
   rideActionAvailability: RideActionAvailability;
+  offlineQueue: OfflineTripQueue;
+  // From the request's serverNow — times "driver arrived N min ago" on the
+  // server's clock. null on an older backend.
+  serverClock: ServerClock | null;
+  // The chat sheet — owned by the screen, which a chat push can open it from.
+  chatOpen: boolean;
+  onOpenChat: () => void;
+  onCloseChat: () => void;
 }
 
-// The rider's tripLive layout: ride header + map/overlay on top, a tap-only
-// tab bar (Stops / Driver / Summary) below it, a flex:1 area rendering
-// whichever tab is selected, then a pinned action bar. Chat is a modal
-// opened from the Driver tab, mirroring the driver's own my-trips/[id].tsx
-// cockpit (Stops/Riders/Details + modal chat).
+interface MapBanner {
+  caption: ReactNode;
+  title: string;
+  onNavigate: (() => void) | null;
+}
+
+// The rider's live-ride layout, shown only while the ride lock holds (seat
+// accepted, trip running, not yet dropped off or marked a no-show): ride
+// header + map/overlay on top, a tap-only tab bar (Stops / Driver / Summary)
+// below it, a flex:1 area rendering whichever tab is selected, then a pinned
+// action bar. Chat is a modal opened from the Driver tab, mirroring the
+// driver's own my-trips/[id].tsx cockpit (Stops/Riders/Details + modal chat).
+// The screen (trip-request/[id].tsx) owns the AppScreen, header and back lock.
 export function RiderLiveView({
   inquiry,
   pickupStop,
   dropoffStop,
-  dropoffSequence,
   availableActions,
   isConnected,
   route,
   riderActions,
   rideActionAvailability,
+  offlineQueue,
+  serverClock,
+  chatOpen,
+  onOpenChat,
+  onCloseChat,
 }: RiderLiveViewProps) {
   const { colors, spacing, radii, shadows } = useTheme();
   const [activeTab, setActiveTab] = useState<TripLiveTabKey>('stops');
-  const [chatOpen, setChatOpen] = useState(false);
 
-  const { riderConfirmedAtPickup } = riderActions;
-  const etaTarget: 'pickup' | 'dropoff' = inquiry.pickupConfirmedAt ? 'dropoff' : 'pickup';
-  const showEta = route.etaMinutes !== null && !inquiry.droppedOffAt;
-  const pickupReached = riderConfirmedAtPickup || !!inquiry.pickupConfirmedAt;
+  // Server truth first: the driver's Pickup moves the rider on board; the
+  // rider's own "I reached the stop" only matters before that.
+  const phase = deriveRiderRidePhase({
+    pickupConfirmedAt: inquiry.pickupConfirmedAt,
+    riderConfirmedAtPickup: riderActions.riderConfirmedAtPickup,
+  });
+  const driverArrivedAt = inquiry.pickupStop?.arrivedAt ?? null;
+  const driverAtPickup = phase !== 'onBoard' && !!driverArrivedAt;
+  const dropoffQueued = !!riderActions.optimisticDroppedOffAt;
+  const copy = liveRideCopy({ phase, driverAtPickup, etaMinutes: route.etaMinutes, dropoffQueued });
 
-  const driverName = inquiry.trip.postedBy.name;
-  const driverPhone = inquiry.trip.postedBy.phone;
-  const vehicleName = `${titleCase(inquiry.trip.userVehicle.make)} ${titleCase(inquiry.trip.userVehicle.model)}`;
-  const vehiclePlate = inquiry.trip.userVehicle.plateNumber;
+  const { trip } = inquiry;
+  const driverName = trip.postedBy.name;
+  const vehicleName = `${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}`;
+  const vehiclePlate = trip.userVehicle.plateNumber;
 
   const pickupDistanceLabel =
     route.pickupDistanceM !== null ? `${formatDistanceShort(route.pickupDistanceM / 1000)} from you` : null;
+  const dropoffDistanceLabel =
+    route.dropoffDistanceM !== null ? `${formatDistanceShort(route.dropoffDistanceM / 1000)} from you` : null;
   const driverDistanceLabel = route.driverDistanceKm !== null ? formatDistanceShort(route.driverDistanceKm) : null;
+  const navigateToPickup = pickupStop && mapsNavigationUrl(pickupStop) ? () => openMapsNavigation(pickupStop) : null;
 
-  // Map overlay banner: two distinct states gated on the LOCAL
-  // riderConfirmedAtPickup flag. The post-confirmation state's eta/distance
-  // numbers are the existing, real, throttled route.etaMinutes/
-  // driverDistanceKm — never a fabricated always-on value.
-  const bannerCaption = riderConfirmedAtPickup
-    ? driverDistanceLabel
-      ? `Driver arriving · ${driverDistanceLabel}`
-      : 'Driver arriving'
-    : pickupDistanceLabel
-      ? `Your pickup · ${pickupDistanceLabel}`
-      : 'Your pickup';
-  const bannerTitle = riderConfirmedAtPickup
-    ? showEta
-      ? `${driverName} is ${formatEtaLabel(route.etaMinutes as number)} away`
-      : `${driverName} is on the way`
-    : (pickupStop?.label ?? 'Pickup point');
-  const bannerActionTitle = riderConfirmedAtPickup ? 'Track' : 'Navigate';
-  const handleBannerAction = () => {
-    if (riderConfirmedAtPickup) return; // "Track": no imperative recenter API is exposed by LiveTripMap
-    // (out of scope) and the map already re-fits to `stops` on every change,
-    // so this is intentionally a no-op.
-    if (pickupStop) openMapsNavigation(pickupStop);
-  };
+  // Map overlay banner — what the rider needs right now, by phase. On board
+  // it's where they're headed (they aren't driving, so no Navigate); before
+  // pickup it's the driver at the stop, the driver on the way (once the
+  // rider is waiting), or the stop to head to.
+  let banner: MapBanner | null = null;
+  if (phase === 'onBoard') {
+    if (dropoffStop) {
+      banner = {
+        caption: dropoffDistanceLabel ? `Your drop-off · ${dropoffDistanceLabel}` : 'Your drop-off',
+        title: dropoffStop.label,
+        onNavigate: null,
+      };
+    }
+  } else if (driverAtPickup) {
+    banner = {
+      caption: <DriverArrivedAgo arrivedAt={driverArrivedAt} serverClock={serverClock} visible />,
+      title: `${driverName} is at your pickup`,
+      onNavigate: phase === 'headToPickup' ? navigateToPickup : null,
+    };
+  } else if (phase === 'waitingAtPickup') {
+    banner = {
+      caption: driverDistanceLabel ? `Driver arriving · ${driverDistanceLabel}` : 'Driver arriving',
+      title:
+        route.etaMinutes !== null
+          ? `${driverName} is ${formatEtaLabel(route.etaMinutes)} away`
+          : `${driverName} is on the way`,
+      onNavigate: null,
+    };
+  } else if (pickupStop) {
+    banner = {
+      caption: pickupDistanceLabel ? `Your pickup · ${pickupDistanceLabel}` : 'Your pickup',
+      title: pickupStop.label,
+      onNavigate: navigateToPickup,
+    };
+  }
 
-  const progressTitle = inquiry.droppedOffAt
-    ? 'Ride completed'
-    : showEta
-      ? etaTarget === 'pickup'
-        ? `Pickup in ${formatEtaLabel(route.etaMinutes as number)}`
-        : `Dropoff in ${formatEtaLabel(route.etaMinutes as number)}`
-      : riderConfirmedAtPickup
-        ? 'Waiting for driver'
-        : 'Head to your pickup point';
-  const progressMeta = dropoffStop ? `Arriving ${dropoffStop.label}` : `Arriving ${titleCase(inquiry.trip.destinationCity)}`;
+  const progressMeta = dropoffStop ? `Arriving ${dropoffStop.label}` : `Arriving ${titleCase(trip.destinationCity)}`;
 
   // pickupStop/dropoffStop carry no `type` field of their own (unlike
   // ManifestRouteStop on the driver side), so it's added here to satisfy
-  // LiveTripMap's LiveTripStop shape. Pickup is always sequence 1 and swaps
-  // 'selected' → 'reached' once the rider has locally confirmed being at the
-  // stop — matching the reference mockup's pin logic exactly. Dropoff always
-  // renders 'upcoming'.
-  const mapStops: LiveTripStop[] = [
-    pickupStop
-      ? {
-          id: pickupStop.id,
-          type: 'PICKUP' as const,
-          label: pickupStop.label,
-          lat: pickupStop.lat,
-          lng: pickupStop.lng,
-          sequence: 1,
-          status: riderConfirmedAtPickup ? ('reached' as const) : ('selected' as const),
-        }
-      : null,
-    dropoffStop
-      ? {
-          id: dropoffStop.id,
-          type: 'DROPOFF' as const,
-          label: dropoffStop.label,
-          lat: dropoffStop.lat,
-          lng: dropoffStop.lng,
-          sequence: dropoffSequence,
-          status: 'upcoming' as const,
-        }
-      : null,
-    ...route.otherTripStops,
-  ].filter((stop): stop is LiveTripStop => stop !== null);
+  // LiveTripMap's LiveTripStop shape. The stop the rider is heading for is
+  // 'selected' (pickup before it, drop-off once on board); a stop already
+  // behind them is 'reached'. A stop typed as free text has no coordinates
+  // and gets no pin.
+  const mapStops: LiveTripStop[] = [...route.otherTripStops];
+  if (hasCoordinates(pickupStop)) {
+    mapStops.push({
+      id: pickupStop.id,
+      type: 'PICKUP',
+      label: pickupStop.label,
+      lat: pickupStop.lat,
+      lng: pickupStop.lng,
+      sequence: route.pickupSequence,
+      status: phase === 'headToPickup' ? 'selected' : 'reached',
+    });
+  }
+  if (hasCoordinates(dropoffStop)) {
+    mapStops.push({
+      id: dropoffStop.id,
+      type: 'DROPOFF',
+      label: dropoffStop.label,
+      lat: dropoffStop.lat,
+      lng: dropoffStop.lng,
+      sequence: route.dropoffSequence,
+      status: dropoffQueued ? 'reached' : phase === 'onBoard' ? 'selected' : 'upcoming',
+    });
+  }
 
   return (
-    <AppScreen edges={['left', 'right', 'bottom']}>
-      <Stack.Screen options={{ title: 'Trip request' }} />
-
+    <>
       <View style={{ flex: 1 }}>
         {/* Ride header */}
         <View
@@ -163,14 +196,13 @@ export function RiderLiveView({
               Your ride · today
             </AppText>
             <AppText variant="title" numberOfLines={1} style={{ textTransform: 'capitalize' }}>
-              {titleCase(inquiry.trip.originCity)} → {titleCase(inquiry.trip.destinationCity)}
+              {titleCase(trip.originCity)} → {titleCase(trip.destinationCity)}
             </AppText>
           </View>
-          <StatusBadge
-            label={riderConfirmedAtPickup ? 'Driver On The Way' : 'Head To Pickup'}
-            tone={riderConfirmedAtPickup ? 'success' : 'warning'}
-          />
+          <StatusBadge label={copy.badge.label} tone={copy.badge.tone} />
         </View>
+
+        <OfflineQueueNotice queue={offlineQueue} variant="bar" />
 
         {/* Map section: pinned, plus its bottom-anchored overlay banner. */}
         <View style={{ height: 340, marginHorizontal: spacing.lg, marginTop: spacing.lg, borderRadius: radii.card, overflow: 'hidden' }}>
@@ -183,18 +215,24 @@ export function RiderLiveView({
             driverLabel="D"
           />
 
-          {pickupStop ? (
+          {banner ? (
             <AppCard style={{ position: 'absolute', left: spacing.md, right: spacing.md, bottom: spacing.md, ...shadows.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText muted variant="caption" numberOfLines={1}>
-                    {bannerCaption}
-                  </AppText>
+                  {typeof banner.caption === 'string' ? (
+                    <AppText muted variant="caption" numberOfLines={1}>
+                      {banner.caption}
+                    </AppText>
+                  ) : (
+                    banner.caption
+                  )}
                   <AppText variant="subtitle" numberOfLines={1}>
-                    {bannerTitle}
+                    {banner.title}
                   </AppText>
                 </View>
-                <AppButton title={bannerActionTitle} variant="secondary" fullWidth={false} onPress={handleBannerAction} />
+                {banner.onNavigate ? (
+                  <AppButton title="Navigate" variant="secondary" fullWidth={false} onPress={banner.onNavigate} />
+                ) : null}
               </View>
             </AppCard>
           ) : null}
@@ -208,23 +246,27 @@ export function RiderLiveView({
         <View style={{ flex: 1 }}>
           <View style={{ flex: 1, display: activeTab === 'stops' ? 'flex' : 'none' }}>
             <StopsTab
-              inquiry={inquiry}
+              phase={phase}
               pickupStop={pickupStop}
               dropoffStop={dropoffStop}
-              dropoffSequence={dropoffSequence}
+              pickupSequence={route.pickupSequence}
+              dropoffSequence={route.dropoffSequence}
               pickupDistanceM={route.pickupDistanceM}
               dropoffDistanceM={route.dropoffDistanceM}
-              pickupReached={pickupReached}
-              riderConfirmedAtPickup={riderConfirmedAtPickup}
-              showEta={showEta}
+              pickupConfirmedAt={inquiry.pickupConfirmedAt}
+              driverArrivedAt={driverArrivedAt}
+              serverClock={serverClock}
+              visible={activeTab === 'stops'}
+              dropoffQueued={dropoffQueued}
               etaMinutes={route.etaMinutes}
               driverDistanceKm={route.driverDistanceKm}
               vehicleName={vehicleName}
               vehiclePlate={vehiclePlate}
               rideActionAvailability={rideActionAvailability}
               actioningType={riderActions.actioningType}
-              onRiderEvent={riderActions.handleRiderEvent}
-              tripStopsSorted={route.tripStopsSorted}
+              onArrived={riderActions.handleArrived}
+              onCompleteRide={riderActions.openDropoffConfirm}
+              tripStops={route.tripStops}
               tripStopsLoading={route.tripStopsLoading}
               actionError={riderActions.actionError}
             />
@@ -232,22 +274,20 @@ export function RiderLiveView({
           <View style={{ flex: 1, display: activeTab === 'driver' ? 'flex' : 'none' }}>
             <DriverTab
               driverName={driverName}
-              driverPhone={driverPhone}
-              riderConfirmedAtPickup={riderConfirmedAtPickup}
-              vehicleName={vehicleName}
-              vehiclePlate={vehiclePlate}
-              vehicleColor={route.vehicleColor}
-              vehicleYear={route.vehicleYear}
-              onOpenChat={() => setChatOpen(true)}
+              driverBadge={copy.driverBadge}
+              callNumber={driverCallNumber(trip)}
+              whatsappNumber={trip.contactNumber}
+              vehicle={trip.userVehicle}
+              onOpenChat={onOpenChat}
             />
           </View>
           <View style={{ flex: 1, display: activeTab === 'summary' ? 'flex' : 'none' }}>
-            <SummaryTab inquiry={inquiry} pickupStop={pickupStop} dropoffStop={dropoffStop} />
+            <SummaryTab inquiry={inquiry} />
           </View>
         </View>
 
-        {/* Action bar (pinned): progress on the left, the real cancel-seat
-            action on the right. */}
+        {/* Action bar (pinned): progress on the left, cancel-seat on the
+            right — still allowed while the trip runs, behind a confirmation. */}
         <View
           style={{
             flexDirection: 'row',
@@ -263,23 +303,19 @@ export function RiderLiveView({
         >
           <View style={{ flex: 1, minWidth: 0 }}>
             <AppText variant="label" numberOfLines={1}>
-              {progressTitle}
+              {copy.progressTitle}
             </AppText>
             <AppText muted variant="caption" numberOfLines={1}>
               {progressMeta}
             </AppText>
           </View>
           {availableActions.includes(TripInquiryStatus.CANCELLED) ? (
-            <AppButton
-              title="Cancel seat"
-              variant="danger"
-              fullWidth={false}
-              loading={riderActions.updateStatusPending}
-              onPress={riderActions.handleCancel}
-            />
+            <AppButton title="Cancel seat" variant="danger" fullWidth={false} onPress={riderActions.openCancelConfirm} />
           ) : null}
         </View>
       </View>
+
+      <RiderConfirmSheet inquiry={inquiry} riderActions={riderActions} />
 
       {/* Chat — modal, opened from the Driver tab's Chat button, reusing the
           exact same ChatModalSheet component the driver screen's own cockpit
@@ -289,12 +325,12 @@ export function RiderLiveView({
           internals changed. */}
       <ChatModalSheet
         visible={chatOpen}
-        onClose={() => setChatOpen(false)}
+        onClose={onCloseChat}
         tripInquiryId={inquiry.id}
         riderName={driverName}
         pickupLabel={vehicleName}
         dropoffLabel={vehiclePlate}
       />
-    </AppScreen>
+    </>
   );
 }

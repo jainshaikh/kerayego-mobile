@@ -56,6 +56,9 @@ export interface ManifestRider {
   pickupConfirmedAt: string | null;
   pickupSource: PickupSource | null;
   droppedOffAt: string | null;
+  // Set when the driver marked this rider as a no-show; a later driver
+  // PICKUP clears it. Absent (not just null) from an older backend.
+  noShowAt?: string | null;
   pickupStop: ManifestStopRef | null;
   dropoffStop: ManifestStopRef | null;
   user: { id: string; name: string; phone: string | null };
@@ -68,12 +71,19 @@ export interface ManifestRouteStop {
   label: string;
   lat: number;
   lng: number;
+  // The SERVER time of the driver's first ARRIVED at this stop, null until
+  // then. Absent from an older backend.
+  arrivedAt?: string | null;
 }
 
 export interface TripManifest {
   trip: TripDetail;
   riders: ManifestRider[];
   routeStops: ManifestRouteStop[];
+  // The server's clock when it built this response, so waiting time at a
+  // stop (serverNow - arrivedAt) never depends on the phone's own clock.
+  // Absent from an older backend — which also has no no-show rules.
+  serverNow?: string;
 }
 
 // `id` must be a client-generated UUID kept stable across retries of the same
@@ -96,6 +106,22 @@ export interface TripEvent {
   payload: Record<string, unknown> | null;
   occurredAt: string;
   syncedAt: string;
+}
+
+// One GPS fix for POST /my/trips/:id/location (the driver app's background
+// location task): the socket's `location.update` payload minus `tripId`,
+// which the path carries — the backend rejects any unknown key with a 400.
+// `ts` is the fix's own capture time (epoch ms); the backend orders fixes by
+// it across both transports and drops one not newer than the trip's last
+// accepted fix, or less than 2 s after it.
+export interface DriverLocationFix {
+  lat: number;
+  lng: number;
+  headingDeg?: number;
+  speedKmh?: number;
+  accuracyM?: number;
+  isMockLocation?: boolean;
+  ts: number;
 }
 
 // The current user's one live-ride "lock", if any — null means neither
@@ -174,11 +200,12 @@ export const tripsApi = {
     return res.data.data;
   },
 
-  // Note: this returns the created TripEvent itself, not the manifest — an
-  // event with type NO_SHOW does NOT change pickupConfirmedAt/droppedOffAt on
-  // the rider (only PICKUP and DROPOFF do), so the manifest cache is not
-  // refetched/updated automatically here. Callers should track NO_SHOW taps
-  // locally if they want to reflect it in the UI before the next fetch.
+  // Returns the created (or, for a replayed id, the already-stored) TripEvent
+  // itself, not the manifest — refetch the manifest to see its effect on the
+  // rider (pickupConfirmedAt / droppedOffAt / noShowAt) or the stop
+  // (arrivedAt). A driver NO_SHOW is refused with a 409 before the rider's
+  // pickup stop has a recorded arrival at least 5 minutes old, or once the
+  // rider is picked up / dropped off.
   recordEvent: async (id: string, data: RecordTripEventPayload) => {
     const res = await apiClient.post<ApiResponse<TripEvent>>(`/my/trips/${id}/events`, data);
     return res.data.data;
@@ -186,6 +213,19 @@ export const tripsApi = {
 
   endTrip: async (id: string) => {
     const res = await apiClient.post<ApiResponse<TripDetail>>(`/my/trips/${id}/end`);
+    return res.data.data;
+  },
+
+  // The background location task's REST path (features/liveRide/
+  // backgroundLocation) — the socket's location.update has no live
+  // connection to ride on while the app is in the background. 1-20 fixes in
+  // any order; `accepted` counts the ones not dropped as stale or too soon (0
+  // is normal). 404: no such trip, or the caller isn't its driver; 409 (error
+  // code TRIP_NOT_IN_PROGRESS): the trip isn't IN_PROGRESS any more; 429:
+  // more than 30 calls a minute for this user. An older backend has no such
+  // route and answers 404 too.
+  recordDriverLocations: async (id: string, locations: DriverLocationFix[]) => {
+    const res = await apiClient.post<ApiResponse<{ accepted: number }>>(`/my/trips/${id}/location`, { locations });
     return res.data.data;
   },
 

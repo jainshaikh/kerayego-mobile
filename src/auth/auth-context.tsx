@@ -5,7 +5,17 @@ import { authApi, type LoginPayload, type RegisterPayload } from '../api/auth.ap
 import { usersApi } from '../api/users.api';
 import { refreshAccessToken, setAccessToken, setOnSessionExpired } from '../api/client';
 import { clearAllAuthStorage, getRefreshToken, setRefreshToken } from '../storage/secure-storage';
-import { registerPushToken, unregisterPushToken } from '../features/notifications/pushToken';
+import { disconnectRideSocket } from '../features/liveRide/socket';
+import {
+  setDriverLocationSessionUser,
+  stopDriverLocationSharing,
+} from '../features/liveRide/backgroundLocation/driverLocationSharing';
+import { setOfflineQueueOwner } from '../features/trips/offlineSync';
+import {
+  invalidateDevicePushToken,
+  registerPushToken,
+  unregisterPushToken,
+} from '../features/notifications/pushToken';
 import type { AuthUser, User } from '../types/api.types';
 
 interface AuthContextValue {
@@ -19,21 +29,48 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// 'logout': the user signed out (the push token was already unregistered with
+// the backend). 'expired': the refresh token was rejected — no valid access
+// token is left for any backend cleanup call.
+type SessionEndReason = 'logout' | 'expired';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | User | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const queryClient = useQueryClient();
 
-  const clearSession = useCallback(async () => {
-    setAccessToken(null);
-    await clearAllAuthStorage();
-    setUser(null);
-    queryClient.clear();
-  }, [queryClient]);
+  const clearSession = useCallback(
+    async (reason: SessionEndReason) => {
+      // Stops any queue flush still running for this user before their token
+      // goes. Their queued trip actions themselves stay on the device — on
+      // logout and on expiry alike — and replay only once they sign back in
+      // (offline-trip-queue.ts scopes every read to its user).
+      setOfflineQueueOwner(null);
+      // Background driver location stops with the session — before its
+      // token goes, so the task never posts under nobody (or the next
+      // account). Best-effort, not awaited: it only talks to the OS.
+      setDriverLocationSessionUser(null);
+      void stopDriverLocationSharing('signed_out');
+      setAccessToken(null);
+      // The ride socket stays authenticated as whoever it handshook as until
+      // it's closed — tear it down before anyone else can sign in here.
+      disconnectRideSocket();
+      if (reason === 'expired') {
+        // Logout unregisters the push token with the backend first; an
+        // expired session can't, so stop this device receiving the expired
+        // user's pushes natively instead. Best-effort, not awaited.
+        invalidateDevicePushToken();
+      }
+      await clearAllAuthStorage();
+      setUser(null);
+      queryClient.clear();
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     setOnSessionExpired(() => {
-      clearSession();
+      clearSession('expired');
     });
 
     (async () => {
@@ -52,6 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const me = await usersApi.getMe();
+        setOfflineQueueOwner(me.id);
+        setDriverLocationSessionUser(me.id);
         setUser(me);
         registerPushToken();
       } catch {
@@ -68,6 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (data: LoginPayload) => {
     const result = await authApi.login(data);
     setAccessToken(result.accessToken);
+    setOfflineQueueOwner(result.user.id);
+    setDriverLocationSessionUser(result.user.id);
     if (result.refreshToken) {
       await setRefreshToken(result.refreshToken);
     }
@@ -90,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Best-effort — clear local session regardless of network/server outcome.
     }
-    await clearSession();
+    await clearSession('logout');
   }, [clearSession]);
 
   const value = useMemo<AuthContextValue>(

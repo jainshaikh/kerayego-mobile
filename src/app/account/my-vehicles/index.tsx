@@ -7,7 +7,7 @@ import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, 
 import { EmptyState } from '../../../components/ui/States';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
-import { userVehicleStatusMeta } from '../../../types/enums';
+import { UserVehicleStatus, userVehicleStatusMeta } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
 
 export default function MyVehiclesScreen() {
@@ -54,6 +54,11 @@ export default function MyVehiclesScreen() {
                   <View>
                     <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
                   </View>
+                  {item.status === UserVehicleStatus.REJECTED ? (
+                    <AppText variant="caption" color={colors.danger} style={{ marginTop: spacing.xs }}>
+                      Tap to see why and resubmit
+                    </AppText>
+                  ) : null}
                 </View>
               </AppCard>
             </Pressable>

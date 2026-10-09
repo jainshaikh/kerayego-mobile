@@ -1,33 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
 import { geoApi, type RouteDirections } from '../../../api/geo.api';
-import type { ManifestRider, ManifestRouteStop, TripManifest } from '../../../api/trips.api';
+import type { ManifestRouteStop, TripManifest } from '../../../api/trips.api';
 import { haversineDistanceMeters } from '../../liveRide/geo';
-import { PickupSource } from '../../../types/enums';
+import type { RiderEventOverlay } from '../tripActionOverlay';
+import { serverClockFrom, type ServerClock } from './noShow';
+import {
+  findNextStop,
+  mergeArrivedStopIds,
+  mergeCockpitRiders,
+  resolveStops,
+  type CockpitRider,
+  type StopResolution,
+} from './stopProgress';
 
 // Driver must be within this many meters of a stop to confirm arrival there.
 // Exported so DriverLiveCockpit's "Get within Nm…" disabled-reason copy can
 // name the same radius this hook gates canConfirmArrival on.
 export const ARRIVAL_RADIUS_METERS = 100;
 
-export interface StopResolution {
-  stop: ManifestRouteStop;
-  riders: ManifestRider[];
-  resolved: boolean;
-}
-
 interface UseDriverStopProgressParams {
   manifest: TripManifest | undefined;
-  optimisticEvents: Record<string, { pickupConfirmedAt?: string; droppedOffAt?: string }>;
+  // Device time the manifest response arrived (react-query's dataUpdatedAt) —
+  // anchors the server clock its serverNow carries.
+  manifestReceivedAt: number;
+  // The driver's taps the server hasn't reflected yet (useDriverTripActions).
+  optimisticEvents: Record<string, RiderEventOverlay>;
+  noShowIds: ReadonlySet<string>;
+  arrivedStopIds: ReadonlySet<string>;
   currentPosition: { lat: number; lng: number } | null;
   active: boolean;
 }
 
 export interface DriverStopProgress {
-  mergedRiders: ManifestRider[];
+  mergedRiders: CockpitRider[];
   stopResolutions: StopResolution[];
   nextStop: ManifestRouteStop | null;
   nextStopDistanceM: number | null;
   canConfirmArrival: boolean;
+  // Stops the driver has reached — per the server, or tapped on this device.
+  arrivedStopIds: Set<string>;
+  // null on an older backend (no serverNow) — no-show and wait timing then stay hidden.
+  serverClock: ServerClock | null;
   selectedStopId: string | null;
   setSelectedStopId: (id: string) => void;
   previewStop: ManifestRouteStop | null;
@@ -36,14 +49,17 @@ export interface DriverStopProgress {
 
 /**
  * Derives the driver's stop-by-stop progress from the manifest (merged with
- * any not-yet-synced optimistic pickup/dropoff events), tracks which stop is
+ * any not-yet-synced pickup/dropoff/no-show/arrival taps), tracks which stop is
  * currently previewed on the map, and fetches turn-by-turn directions for the
  * previewed stop's leg. This is the state machine behind my-trips/[id].tsx's
  * Stops/Riders tabs and map overlay.
  */
 export function useDriverStopProgress({
   manifest,
+  manifestReceivedAt,
   optimisticEvents,
+  noShowIds,
+  arrivedStopIds,
   currentPosition,
   active,
 }: UseDriverStopProgressParams): DriverStopProgress {
@@ -74,58 +90,39 @@ export function useDriverStopProgress({
   const previewStopRef = useRef<ManifestRouteStop | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  // Riders grouped/ordered by manifest.routeStops (pickup stops first, then
-  // dropoff stops, per the backend's visit order) with optimistic pickup/
-  // dropoff overrides merged in. A rider whose pickupStop/dropoffStop is null
+  // Riders with the driver's not-yet-reflected taps merged in, grouped by
+  // manifest.routeStops (pickup stops first, then dropoff stops, per the
+  // backend's visit order). A rider whose pickupStop/dropoffStop is null
   // (legacy data) — or who otherwise doesn't match any current stop — simply
-  // isn't grouped under a stop below; it never disappears from mergedRiders.
-  const mergedRiders: ManifestRider[] = (manifest?.riders ?? []).map((rider) => {
-    const optimistic = optimisticEvents[rider.id];
-    return optimistic
-      ? {
-          ...rider,
-          pickupConfirmedAt: rider.pickupConfirmedAt ?? optimistic.pickupConfirmedAt ?? null,
-          droppedOffAt: rider.droppedOffAt ?? optimistic.droppedOffAt ?? null,
-          pickupSource: rider.pickupSource ?? (optimistic.pickupConfirmedAt ? PickupSource.DRIVER_TAP : null),
-        }
-      : rider;
-  });
+  // isn't grouped under a stop; it never disappears from mergedRiders.
+  const mergedRiders = mergeCockpitRiders(manifest?.riders ?? [], { riderEvents: optimisticEvents, noShowIds });
+  const routeStops = manifest?.routeStops ?? [];
 
-  const stopGroups: { stop: ManifestRouteStop; riders: ManifestRider[] }[] = (manifest?.routeStops ?? []).map((stop) => {
-    const stopRiders = mergedRiders.filter((rider) =>
-      stop.type === 'PICKUP' ? rider.pickupStop?.id === stop.id : rider.dropoffStop?.id === stop.id,
-    );
-    return { stop, riders: stopRiders };
-  });
+  // Per-stop "is every rider at this stop done" — shared by the map's
+  // numbered pins and the Stops tab's sequence dot/badge. A no-show counts as
+  // done at both their pickup and their drop-off stop (see isRiderDoneAtStop).
+  const stopResolutions = resolveStops(routeStops, mergedRiders);
 
   // First stop (in visit order) that still has unfinished business: a PICKUP
-  // stop with a rider not yet picked up, or a DROPOFF stop with a rider not
-  // yet dropped off. NO_SHOW riders are logged but never clear
-  // pickupConfirmedAt, so a no-show at a stop keeps that stop "next" — matches
-  // the driver having to actually resolve everyone there before moving on.
-  const nextStop: ManifestRouteStop | null =
-    stopGroups.find(({ stop, riders }) =>
-      stop.type === 'PICKUP' ? riders.some((r) => !r.pickupConfirmedAt) : riders.some((r) => !r.droppedOffAt),
-    )?.stop ?? null;
+  // stop with a rider still to be picked up, or a DROPOFF stop with a rider
+  // still to be dropped off.
+  const nextStop = findNextStop(stopResolutions);
 
   const nextStopDistanceM =
     nextStop && currentPosition ? haversineDistanceMeters(currentPosition, { lat: nextStop.lat, lng: nextStop.lng }) : null;
   const canConfirmArrival = nextStopDistanceM !== null && nextStopDistanceM <= ARRIVAL_RADIUS_METERS;
 
-  // Per-stop "is every rider at this stop fully resolved for its kind" —
-  // shared by the map's numbered pins and the Stops tab's sequence dot/badge.
-  const stopResolutions: StopResolution[] = stopGroups.map(({ stop, riders }) => ({
-    stop,
-    riders,
-    resolved: stop.type === 'PICKUP' ? riders.every((r) => !!r.pickupConfirmedAt) : riders.every((r) => !!r.droppedOffAt),
-  }));
+  // The server's arrivals survive a remount/app restart; the overlay's cover
+  // a Reached still queued offline or just sent.
+  const mergedArrivedStopIds = mergeArrivedStopIds(routeStops, arrivedStopIds);
+  const serverClock = serverClockFrom(manifest?.serverNow, manifestReceivedAt);
 
   // The stop selectedStopId currently resolves to (or null before the first
   // sync below, or if it somehow names a stop no longer in this manifest).
-  // stopGroups covers every routeStop unconditionally, so this lookup doesn't
-  // miss stops that happen to have no riders on them.
+  // stopResolutions covers every routeStop unconditionally, so this lookup
+  // doesn't miss stops that happen to have no riders on them.
   const previewStop: ManifestRouteStop | null =
-    stopGroups.find((group) => group.stop.id === selectedStopId)?.stop ?? null;
+    stopResolutions.find((resolution) => resolution.stop.id === selectedStopId)?.stop ?? null;
 
   // Keeps selectedStopId auto-tracking nextStop by default. Whenever nextStop
   // changes: an unset selection snaps to it immediately; an existing
@@ -146,7 +143,7 @@ export function useDriverStopProgress({
     setSyncedNextStopId(nextStop?.id ?? null);
     if (nextStop) {
       const targetId = nextStop.id;
-      const stopOrder = manifest?.routeStops ?? [];
+      const stopOrder = routeStops;
       setSelectedStopId((prev) => {
         if (!prev) return targetId;
         const prevIndex = stopOrder.findIndex((s) => s.id === prev);
@@ -215,6 +212,8 @@ export function useDriverStopProgress({
     nextStop,
     nextStopDistanceM,
     canConfirmArrival,
+    arrivedStopIds: mergedArrivedStopIds,
+    serverClock,
     selectedStopId,
     setSelectedStopId,
     previewStop,

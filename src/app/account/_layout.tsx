@@ -23,6 +23,7 @@ export default function AccountLayout() {
       <Stack.Screen name="my-vehicles/index" options={{ title: 'My Vehicles' }} />
       <Stack.Screen name="my-vehicles/new" options={{ title: 'Register Vehicle' }} />
       <Stack.Screen name="my-vehicles/[id]" options={{ title: 'Vehicle Details' }} />
+      <Stack.Screen name="my-vehicles/edit/[id]" options={{ title: 'Edit Vehicle' }} />
       <Stack.Screen name="my-trips/index" options={{ title: 'My Trips' }} />
       <Stack.Screen name="my-trips/new" options={{ title: 'Post a Trip' }} />
       <Stack.Screen name="my-trips/[id]" options={{ title: 'Trip Details' }} />

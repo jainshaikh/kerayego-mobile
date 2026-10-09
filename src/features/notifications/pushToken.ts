@@ -17,6 +17,13 @@ export function configureNotificationHandler(): void {
   });
 }
 
+// Settles once the newest invalidateDevicePushToken() call has (see below).
+let pendingInvalidation: Promise<void> = Promise.resolve();
+
+// Upper bound on how long registration waits for that invalidation — a native
+// call that never settles must not leave the next session without push.
+const INVALIDATION_WAIT_MS = 10_000;
+
 // Best-effort on both ends — a user who denies the permission prompt, or a
 // device that can't produce a token for some reason, should never block
 // login/app-start. Call after a successful login and after a bootstrap-
@@ -24,6 +31,10 @@ export function configureNotificationHandler(): void {
 // start without needing its own UI.
 export async function registerPushToken(): Promise<void> {
   try {
+    // A login right after a session expiry must register the token minted
+    // after the old one was deleted, not the one being deleted.
+    await settleWithin(pendingInvalidation, INVALIDATION_WAIT_MS);
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -65,4 +76,33 @@ export async function unregisterPushToken(): Promise<void> {
   } catch (err) {
     console.warn('[pushToken] failed to unregister push token:', err);
   }
+}
+
+// Session-expiry counterpart of unregisterPushToken(). Once a session has
+// expired there is no valid access token left to call DELETE /device-tokens
+// with (the backend scopes it to the token's owner), so the backend row for
+// this device would keep delivering the expired user's pushes here. Instead,
+// invalidate the token at its source: on Android this deletes the FCM
+// registration token (FirebaseMessaging.deleteToken()), so the backend's next
+// send to it fails as unregistered and it prunes the row itself
+// (removeInvalidTokens); on iOS it unregisters from APNs. The next
+// registerPushToken() (next login) mints and registers a fresh token.
+// Fire-and-forget: never blocks the caller, never throws.
+export function invalidateDevicePushToken(): void {
+  if (Platform.OS === 'web') return;
+  pendingInvalidation = pendingInvalidation.then(() =>
+    Notifications.unregisterForNotificationsAsync().catch((err) => {
+      console.warn('[pushToken] failed to invalidate the device push token:', err);
+    }),
+  );
+}
+
+function settleWithin(promise: Promise<void>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    promise.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }

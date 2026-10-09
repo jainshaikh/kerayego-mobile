@@ -7,7 +7,9 @@ import { useTheme } from '../../../theme';
 import { useAuth } from '../../../auth/auth-context';
 import { tripInquiriesApi, type ChatMessage } from '../../../api/trip-inquiries.api';
 import { normalizeApiError } from '../../../api/errors';
+import { useAppInForeground } from '../../../hooks/useAppInForeground';
 import { useRideSocket, type ChatReadPayload } from '../socket';
+import { fetchChatHistory, mergeChatMessages, newestServerCreatedAt } from '../chatHistory';
 
 interface ChatPanelProps {
   active: boolean;
@@ -30,12 +32,26 @@ const TYPING_THROTTLE_MS = 2500;
 // typing event, absent a further one.
 const TYPING_INDICATOR_TIMEOUT_MS = 4000;
 
-function upsertMessage(list: LocalChatMessage[], incoming: ChatMessage): LocalChatMessage[] {
-  const index = list.findIndex((m) => m.id === incoming.id);
-  if (index === -1) return [...list, incoming];
-  const next = [...list];
-  next[index] = { ...incoming };
-  return next;
+type ThreadLoad = { ok: true; messages: ChatMessage[] | null } | { ok: false; error: unknown };
+
+// The thread's history (from `after` on), following the server's cursor —
+// see fetchChatHistory. Resolves with the failure instead of rejecting, so
+// the effects below need no try block (the React Compiler won't compile a
+// component whose code has one with conditionals inside it).
+function loadThread(tripInquiryId: string, options: { after?: string; isCancelled: () => boolean }): Promise<ThreadLoad> {
+  return fetchChatHistory((cursor) => tripInquiriesApi.getMessages(tripInquiryId, cursor), options).then(
+    (messages): ThreadLoad => ({ ok: true, messages }),
+    (error: unknown): ThreadLoad => ({ ok: false, error }),
+  );
+}
+
+// The newest message the other party sent — what a read receipt points at
+// (it covers everything before it too). Messages are kept in createdAt order.
+function newestFromOtherParty(list: LocalChatMessage[], currentUserId: string | undefined): LocalChatMessage | null {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i].senderId !== currentUserId) return list[i];
+  }
+  return null;
 }
 
 /**
@@ -71,12 +87,24 @@ export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelPr
   const [sendError, setSendError] = useState<string | null>(null);
   const [otherTyping, setOtherTyping] = useState(false);
 
+  const inForeground = useAppInForeground();
+
   const lastMarkedReadIdRef = useRef<string | null>(null);
   const lastTypingSentAtRef = useRef(0);
   const typingClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<FlatList<LocalChatMessage>>(null);
+  // The current open's full history load — a catch-up waits for it, so the
+  // two can't race each other. Settles, never rejects.
+  const historyLoadRef = useRef<Promise<void> | null>(null);
+  // The thread as last rendered, for a catch-up to resume from after an await.
+  const messagesRef = useRef<LocalChatMessage[]>(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  });
 
-  // --- initial history fetch, reset every time this tab becomes active --------
+  // --- full history, reloaded every time this panel becomes active -----------
+  // Follows the server's cursor to the end: it pages oldest-first, so one
+  // page alone would be a long thread's FIRST 50 messages, not its newest.
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
@@ -87,50 +115,76 @@ export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelPr
     // fetch-on-mount effects (e.g. the driver/rider screens' location-watch
     // setup) — a bare synchronous setState at the top of an effect body
     // triggers this project's react-hooks/set-state-in-effect lint rule.
-    (async () => {
+    historyLoadRef.current = (async () => {
       setMessages([]);
       setLoadError(null);
       setSendError(null);
       setLoading(true);
-      try {
-        const result = await tripInquiriesApi.getMessages(tripInquiryId);
-        if (cancelled) return;
-        setMessages(result.data);
-      } catch (error) {
-        if (cancelled) return;
-        setLoadError(normalizeApiError(error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
+      const outcome = await loadThread(tripInquiryId, { isCancelled: () => cancelled });
+      if (cancelled) return;
+      if (!outcome.ok) {
+        setLoadError(normalizeApiError(outcome.error).message);
+      } else if (outcome.messages) {
+        // Merged, not replaced: anything that arrived over the socket (or
+        // was sent from here) while the pages loaded stays.
+        const history = outcome.messages;
+        setMessages((prev) => mergeChatMessages(prev, history));
       }
+      setLoading(false);
     })();
 
     return () => {
       cancelled = true;
+      historyLoadRef.current = null;
     };
   }, [active, tripInquiryId]);
 
   // --- join/leave this inquiry's chat room -----------------------------------
-  // Mirrors the driver/rider screens' own trip-room join/leave effects
-  // exactly: joins once the shared socket is ready (which may not be the case
-  // yet on first mount), leaves again as soon as this tab goes inactive/unmounts.
+  // Joins once the shared socket is ready (which may not be the case yet on
+  // first mount) and the app is in the foreground; leaves as soon as this
+  // panel goes inactive/unmounts or the app goes to the background. Being in
+  // the room is what tells the server this user is reading the thread — it
+  // sends a push only while they aren't, so a backgrounded app must leave or
+  // its user would never be notified.
+  //
+  // While out of the room, new messages reach this device only as pushes,
+  // never over the socket — so each (re)join catches up from the server.
   useEffect(() => {
-    if (!active || !isReady) return;
+    if (!active || !isReady || !inForeground) return;
     let cancelled = false;
-    joinInquiry(tripInquiryId).then((result) => {
-      if (!cancelled && !result.ok) {
-        console.warn('[ChatPanel] joinInquiry failed:', result.error);
+
+    const catchUp = async () => {
+      // After the full load, so a message sent between its last page and
+      // this join is still picked up.
+      await historyLoadRef.current;
+      if (cancelled) return;
+      const after = newestServerCreatedAt(messagesRef.current) ?? undefined;
+      const outcome = await loadThread(tripInquiryId, { after, isCancelled: () => cancelled });
+      if (cancelled) return;
+      if (!outcome.ok) {
+        console.warn('[ChatPanel] chat catch-up failed:', normalizeApiError(outcome.error).message);
+        return;
       }
+      const missed = outcome.messages;
+      if (!missed) return;
+      setMessages((prev) => mergeChatMessages(prev, missed));
+      // A full load that had failed counts as recovered once this works.
+      setLoadError(null);
+    };
+
+    joinInquiry(tripInquiryId).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        console.warn('[ChatPanel] joinInquiry failed:', result.error);
+        return;
+      }
+      void catchUp();
     });
     return () => {
       cancelled = true;
       leaveInquiry(tripInquiryId);
     };
-    // joinInquiry/leaveInquiry omitted deliberately: useRideSocket() returns a
-    // new function identity every render (it reads live module state, not a
-    // stale closure), so including them would tear down/rejoin the room on
-    // every render instead of only when active/isReady/tripInquiryId change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, isReady, tripInquiryId]);
+  }, [active, isReady, inForeground, tripInquiryId, joinInquiry, leaveInquiry]);
 
   // --- incoming chat messages -------------------------------------------------
   useEffect(() => {
@@ -143,11 +197,10 @@ export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelPr
       // already used by the rider's location-update subscription in
       // trip-request/[id].tsx.
       if (payload.tripInquiryId !== tripInquiryId) return;
-      setMessages((prev) => upsertMessage(prev, payload));
+      setMessages((prev) => mergeChatMessages(prev, [payload]));
     });
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tripInquiryId]);
+  }, [active, tripInquiryId, onChatMessage]);
 
   // --- typing indicator ---------------------------------------------------------
   useEffect(() => {
@@ -164,8 +217,7 @@ export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelPr
       typingClearTimerRef.current = null;
       setOtherTyping(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tripInquiryId, currentUserId]);
+  }, [active, tripInquiryId, currentUserId, onTyping]);
 
   // --- read receipts for my own sent messages ------------------------------------
   useEffect(() => {
@@ -183,20 +235,20 @@ export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelPr
       });
     });
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tripInquiryId, currentUserId]);
+  }, [active, tripInquiryId, currentUserId, onReadReceipt]);
 
-  // --- mark-as-read: whenever the latest message is a NEW one from the other party ---
+  // --- mark-as-read: the newest message from the other party, once seen ------
+  // Only while it can reach the server (socket ready — chat.read isn't held
+  // back while it isn't) and the app is in the foreground (the user is
+  // looking), so a message that arrived meanwhile is marked as soon as both
+  // are true again.
   useEffect(() => {
-    if (!active || messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.senderId === currentUserId) return;
-    if (lastMarkedReadIdRef.current === last.id) return;
-    lastMarkedReadIdRef.current = last.id;
-    markRead(tripInquiryId, last.id);
-    // markRead omitted deliberately — same reasoning as joinInquiry/leaveInquiry above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, messages, currentUserId, tripInquiryId]);
+    if (!active || !isReady || !inForeground) return;
+    const lastFromOther = newestFromOtherParty(messages, currentUserId);
+    if (!lastFromOther || lastMarkedReadIdRef.current === lastFromOther.id) return;
+    lastMarkedReadIdRef.current = lastFromOther.id;
+    markRead(tripInquiryId, lastFromOther.id);
+  }, [active, isReady, inForeground, messages, currentUserId, tripInquiryId, markRead]);
 
   const handleChangeDraft = (text: string) => {
     setDraft(text);

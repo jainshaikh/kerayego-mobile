@@ -1,21 +1,35 @@
 import { ScrollView, View } from 'react-native';
 import { AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import type { ManifestRider } from '../../../api/trips.api';
 import { RiderCard } from './RiderCard';
+import type { NoShowContext } from './noShow';
+import type { CockpitRider } from './stopProgress';
 
 interface RidersTabProps {
   loading: boolean;
-  riders: ManifestRider[];
-  noShowIds: Set<string>;
-  pending: boolean;
+  riders: CockpitRider[];
+  noShowContext: NoShowContext;
+  // Whether this tab is the one showing — no-show countdowns only tick then.
+  visible: boolean;
+  isRiderPending: (riderId: string) => boolean;
   unreadCounts: Record<string, number>;
-  onToggleRiderStatus: (rider: ManifestRider) => void;
+  onToggleRiderStatus: (rider: CockpitRider) => void;
+  onNoShow: (rider: CockpitRider) => void;
   onChat: (riderId: string, riderName: string) => void;
 }
 
 // Riders tab (design spec §4.2): one Card per rider.
-export function RidersTab({ loading, riders, noShowIds, pending, unreadCounts, onToggleRiderStatus, onChat }: RidersTabProps) {
+export function RidersTab({
+  loading,
+  riders,
+  noShowContext,
+  visible,
+  isRiderPending,
+  unreadCounts,
+  onToggleRiderStatus,
+  onNoShow,
+  onChat,
+}: RidersTabProps) {
   const { spacing } = useTheme();
 
   return (
@@ -34,10 +48,12 @@ export function RidersTab({ loading, riders, noShowIds, pending, unreadCounts, o
             <RiderCard
               key={rider.id}
               rider={rider}
-              noShow={noShowIds.has(rider.id)}
-              pending={pending}
+              noShowContext={noShowContext}
+              visible={visible}
+              pending={isRiderPending(rider.id)}
               unreadCount={unreadCounts[rider.id] ?? 0}
               onAction={() => onToggleRiderStatus(rider)}
+              onNoShow={() => onNoShow(rider)}
               onChat={() => onChat(rider.id, rider.user.name)}
             />
           ))}

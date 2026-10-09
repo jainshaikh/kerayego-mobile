@@ -6,6 +6,7 @@ import {
   type TripFilters,
   type UpdateTripPayload,
 } from '../../api/trips.api';
+import { normalizeApiError } from '../../api/errors';
 
 export function useInfiniteTrips(filters: Omit<TripFilters, 'page'>) {
   return useInfiniteQuery({
@@ -107,17 +108,24 @@ export function useTripManifest(id: string | undefined, enabled = true) {
   });
 }
 
-// The backend returns the created TripEvent (not the manifest) — only PICKUP
-// and DROPOFF actually change a rider's pickupConfirmedAt/droppedOffAt, so a
-// refetch is what picks those up. NO_SHOW is logged but doesn't change either
-// field; the screen tracks that locally since there's nothing server-side to
-// re-sync for it.
+// The backend returns the created TripEvent (not the manifest), so a refetch
+// is what picks up the event's effect: a rider's pickupConfirmedAt /
+// droppedOffAt / noShowAt, or a stop's arrivedAt. A 409 means the screen
+// acted on an out-of-date manifest (e.g. a no-show for a rider who was
+// already picked up, or one tapped before the server's 5-minute wait was
+// over) — refetch then too, so the cockpit shows the real state and
+// re-anchors its wait timers on a fresh serverNow.
 export function useRecordTripEvent(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: RecordTripEventPayload) => tripsApi.recordEvent(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tripManifest', id] });
+    },
+    onError: (error) => {
+      if (normalizeApiError(error).kind === 'conflict') {
+        queryClient.invalidateQueries({ queryKey: ['tripManifest', id] });
+      }
     },
   });
 }
@@ -130,6 +138,9 @@ export function useEndTrip(id: string) {
       queryClient.invalidateQueries({ queryKey: ['myTrip', id] });
       queryClient.invalidateQueries({ queryKey: ['myTrips'] });
       queryClient.invalidateQueries({ queryKey: ['tripManifest', id] });
+      // The ended trip is no longer the driver's active ride — let the
+      // app-wide lock go now rather than on its next 20 s poll.
+      queryClient.invalidateQueries({ queryKey: ['myActiveRide'] });
     },
   });
 }

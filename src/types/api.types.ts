@@ -1,6 +1,8 @@
 import type {
   BookingRequestStatus,
+  DocumentStatus,
   FuelType,
+  Market,
   ProviderStatus,
   RentalDurationType,
   Role,
@@ -374,18 +376,25 @@ export interface UploadResult {
 
 // ─── User Vehicles (personal vehicle, used to post Trips) ───────────────────
 
+// The four verification documents every personal vehicle carries (backend
+// USER_VEHICLE_DOCUMENT_TYPES — GET /my/vehicles/:id returns only these).
+export type UserVehicleDocumentType = 'ID_DOCUMENT_FRONT' | 'ID_DOCUMENT_BACK' | 'DRIVING_LICENSE' | 'VEHICLE_REGISTRATION';
+
+// A raw UploadedDocument row (ownerType USER_VEHICLE, ownerId = vehicle id).
+// The per-document review fields exist in the schema, but today's admin review
+// is whole-vehicle, so nothing sets them: a document stays PENDING with no
+// reason unless that changes. A replaced document goes back to PENDING.
 export interface UserVehicleDocument {
   id: string;
-  documentType:
-    | 'ID_DOCUMENT'
-    | 'ID_DOCUMENT_FRONT'
-    | 'ID_DOCUMENT_BACK'
-    | 'DRIVING_LICENSE'
-    | 'VEHICLE_REGISTRATION';
+  documentType: UserVehicleDocumentType;
   fileUrl: string;
-  status: string;
+  // Identifies "the same file" to PATCH /my/vehicles/:id — resending it keeps the document as is.
+  publicId: string;
+  status: DocumentStatus;
   rejectionReason: string | null;
+  reviewedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserVehicleImage {
@@ -405,6 +414,8 @@ export interface UserVehicle {
   year: number | null;
   color: string | null;
   plateNumber: string;
+  // Drives the currency of every trip posted with this vehicle (constants/markets.ts).
+  country: Market;
   status: UserVehicleStatus;
   rejectionReason: string | null;
   createdAt: string;
@@ -476,4 +487,62 @@ export interface TripDetail extends Omit<TripCard, 'userVehicle'> {
     status: UserVehicleStatus;
     images: UserVehicleImage[];
   };
+}
+
+// ─── Push notification data ──────────────────────────────────────────────────
+// The FCM `data` block of a push, as the notification-tap handler receives it
+// (features/notifications/pushRouting.ts). Every value is a string.
+
+// Mirrors kerayego-backend src/modules/notifications/ride-push-data.ts. The
+// role is relative to THE TRIP, not User.role: the trip's poster is the
+// DRIVER, the inquiry's own user the RIDER.
+export type PushRecipientRole = 'DRIVER' | 'RIDER';
+
+// The `type` strings of every ride push (RIDE_PUSH_TYPES on the backend) —
+// never renamed or removed there, only added to.
+export type RidePushType =
+  | 'tripInquiry.created'
+  | 'tripInquiry.accepted'
+  | 'tripInquiry.rejected'
+  | 'tripInquiry.cancelled'
+  | 'tripInquiry.riderCancelled'
+  | 'chat_message'
+  | 'trip.started'
+  | 'trip.driverArrived'
+  | 'trip.droppedOff'
+  | 'trip.riderNoShow'
+  | 'trip.nextPickupApproaching'
+  | 'trip.completed';
+
+// A newer backend marks its payloads v: '2' and always sends recipientRole,
+// recipientUserId, tripId, tripInquiryId and its legacy mirror inquiryId. An
+// older one sent only { type, inquiryId } on tripInquiry.*, { type,
+// tripInquiryId, messageId } on chat_message and { type, tripId,
+// tripInquiryId } on trip.* — hence every key but `type` is optional here.
+export interface RidePushData {
+  v?: '2';
+  type: RidePushType;
+  recipientRole?: PushRecipientRole;
+  recipientUserId?: string;
+  tripId?: string;
+  tripInquiryId?: string;
+  inquiryId?: string;
+  // chat_message only.
+  messageId?: string;
+  // trip.driverArrived only.
+  stopId?: string;
+}
+
+// Sent to a personal vehicle's owner when an admin decides on it
+// (kerayego-backend src/modules/user-vehicles/user-vehicle-events.ts). No v or
+// recipient keys.
+export type UserVehiclePushType =
+  | 'userVehicle.approved'
+  | 'userVehicle.rejected'
+  | 'userVehicle.suspended'
+  | 'userVehicle.reactivated';
+
+export interface UserVehiclePushData {
+  type: UserVehiclePushType;
+  userVehicleId: string;
 }

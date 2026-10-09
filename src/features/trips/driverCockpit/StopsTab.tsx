@@ -4,7 +4,8 @@ import { useTheme } from '../../../theme';
 import type { ManifestRouteStop } from '../../../api/trips.api';
 import { formatDistance } from '../../../utils/format';
 import { StopCard } from './StopCard';
-import type { StopResolution } from './useDriverStopProgress';
+import type { ServerClock } from './noShow';
+import type { StopResolution } from './stopProgress';
 
 interface StopsTabProps {
   loading: boolean;
@@ -15,6 +16,9 @@ interface StopsTabProps {
   nextStopArrived: boolean;
   canConfirmArrival: boolean;
   arrivedPending: boolean;
+  serverClock: ServerClock | null;
+  // Whether this tab is the one showing — wait timers only tick then.
+  visible: boolean;
   onConfirmArrival: (stop: ManifestRouteStop) => void;
   onSelectStop: (stopId: string) => void;
 }
@@ -30,6 +34,8 @@ export function StopsTab({
   nextStopArrived,
   canConfirmArrival,
   arrivedPending,
+  serverClock,
+  visible,
   onConfirmArrival,
   onSelectStop,
 }: StopsTabProps) {
@@ -47,9 +53,9 @@ export function StopsTab({
         </AppText>
       ) : (
         <View style={{ gap: spacing.md }}>
-          {stopResolutions.map(({ stop, riders, resolved }, index) => {
+          {stopResolutions.map(({ stop, riders, resolved, skipped }, index) => {
             const isNextStop = nextStop?.id === stop.id;
-            const status = resolved ? 'reached' : isNextStop ? 'next' : 'upcoming';
+            const status = skipped ? 'skipped' : resolved ? 'reached' : isNextStop ? 'next' : 'upcoming';
             const distanceLabel =
               isNextStop && nextStopDistanceM !== null ? formatDistance(nextStopDistanceM / 1000) : null;
             const riderNames = riders.map((r) => r.user.name).join(' · ');
@@ -66,6 +72,9 @@ export function StopsTab({
                 nextStopArrived={nextStopArrived}
                 canConfirmArrival={canConfirmArrival}
                 arrivedPending={arrivedPending}
+                arrivedAt={stop.arrivedAt}
+                serverClock={serverClock}
+                visible={visible}
                 onReach={() => {
                   // Only ever confirms arrival for the real nextStop — never
                   // selectedStopId/previewStop — regardless of which card

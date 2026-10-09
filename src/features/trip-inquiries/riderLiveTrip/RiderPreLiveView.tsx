@@ -1,66 +1,107 @@
 import type { ReactElement } from 'react';
-import { Linking, ScrollView, View, type RefreshControlProps } from 'react-native';
-import { Stack } from 'expo-router';
+import { ScrollView, View, type RefreshControlProps } from 'react-native';
 
-import { AppButton, AppCard, AppScreen, AppText, Row, StatusBadge } from '../../../components/ui';
+import { AppButton, AppCard, AppText, Row, StatusBadge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripInquiry } from '../../../api/trip-inquiries.api';
-import { PickupSource, TripEventType, TripInquiryStatus, TripStatus, tripInquiryStatusMeta } from '../../../types/enums';
-import { formatPrice, titleCase } from '../../../utils/format';
+import { TripInquiryStatus } from '../../../types/enums';
+import { titleCase } from '../../../utils/format';
+import { formatTripDateTime, tripTimeZoneSuffix } from '../../../utils/tripDateTime';
+import { ChatModalSheet } from '../../liveRide/components/ChatModalSheet';
+import type { ServerClock } from '../../trips/driverCockpit/noShow';
+import type { OfflineTripQueue } from '../../trips/offlineSync';
+import { OfflineQueueNotice } from '../../trips/components/OfflineQueueNotice';
 import type { RiderTripActions } from './useRiderTripActions';
-import type { RideActionAvailability } from './rideActionAvailability';
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
+import { pendingRequestTripNote, rejectionReasonHeading, seatStageBadge, type RiderSeatStage } from './riderTripState';
+import { ownDropoffPoint, ownPickupPoint, seatFare, tripCurrency, vehicleDisplayName } from './tripDisplay';
+import { PreTripConfirmationCard } from './PreTripConfirmationCard';
+import { SeatOutcomeCard } from './SeatOutcomeCard';
+import { RiderConfirmSheet } from './RiderConfirmSheet';
 
 interface RiderPreLiveViewProps {
   inquiry: TripInquiry;
+  // Never 'live' — that stage renders RiderLiveView instead.
+  stage: RiderSeatStage;
   availableActions: TripInquiryStatus[];
   riderActions: RiderTripActions;
-  rideActionAvailability: RideActionAvailability;
+  offlineQueue: OfflineTripQueue;
+  serverClock: ServerClock | null;
   refreshControl?: ReactElement<RefreshControlProps>;
+  // The chat sheet — owned by the screen, which a chat push can open it from.
+  chatOpen: boolean;
+  onOpenChat: () => void;
+  onCloseChat: () => void;
 }
 
-// The rider's view of a seat request before the trip goes live: request
-// summary, driver contact once accepted, day-of status once the trip
-// starts, and geofence-gated arrive/complete actions if the trip somehow
-// becomes live-eligible without the tripLive tabbed layout kicking in yet.
+// The rider's scrolling view of their request whenever the ride isn't live
+// for them: the request itself (pending, or why it was rejected, cancelled or
+// expired), the pre-trip confirmation card once the seat is confirmed, and —
+// after the ride — how it ended for them (dropped off, marked a no-show, or
+// the trip ended / was cancelled / suspended). No ride actions live here:
+// arriving and completing happen only in the live view.
 export function RiderPreLiveView({
   inquiry,
+  stage,
   availableActions,
   riderActions,
-  rideActionAvailability,
+  offlineQueue,
+  serverClock,
   refreshControl,
+  chatOpen,
+  onOpenChat,
+  onCloseChat,
 }: RiderPreLiveViewProps) {
-  const { colors, spacing } = useTheme();
-  const { showArriveButton, canArrive, arriveDisabledReason, showCompleteButton, canComplete, completeDisabledReason } =
-    rideActionAvailability;
+  const { spacing } = useTheme();
+  const { trip } = inquiry;
+  const badge = seatStageBadge(stage, inquiry.status);
+  const fare = seatFare(trip.pricePerSeat, inquiry.requestedSeats, tripCurrency(trip));
+  const reasonHeading = rejectionReasonHeading(inquiry.status);
+  const pendingNote = pendingRequestTripNote(inquiry.status, trip.status);
 
   return (
-    <AppScreen edges={['left', 'right', 'bottom']}>
-      <Stack.Screen options={{ title: 'Trip request' }} />
+    <>
       <ScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={refreshControl}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <AppText variant="title" style={{ flex: 1, marginRight: spacing.md, textTransform: 'capitalize' }}>
-            {titleCase(inquiry.trip.originCity)} → {titleCase(inquiry.trip.destinationCity)}
+            {titleCase(trip.originCity)} → {titleCase(trip.destinationCity)}
           </AppText>
-          <StatusBadge label={tripInquiryStatusMeta[inquiry.status].label} tone={tripInquiryStatusMeta[inquiry.status].tone} />
+          <StatusBadge label={badge.label} tone={badge.tone} />
         </View>
         <AppText muted style={{ marginTop: spacing.xs }}>
-          {inquiry.trip.postedBy.name}
+          {trip.postedBy.name}
         </AppText>
 
-        <AppCard style={{ marginTop: spacing.lg }}>
-          <Row
-            label="Departure"
-            value={new Date(inquiry.trip.departureAt).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}
-          />
-          <Row label="Seats requested" value={String(inquiry.requestedSeats)} />
-          <Row label="Pickup point" value={inquiry.trip.pickupPoint} />
-          {inquiry.pickupNote ? <Row label="Your note" value={inquiry.pickupNote} /> : null}
-          <Row label="Price / seat" value={formatPrice(inquiry.trip.pricePerSeat)} />
-        </AppCard>
+        <OfflineQueueNotice queue={offlineQueue} />
+
+        {stage === 'upcoming' ? (
+          <PreTripConfirmationCard inquiry={inquiry} serverClock={serverClock} />
+        ) : (
+          <>
+            {stage !== 'request' && stage !== 'live' ? (
+              <SeatOutcomeCard stage={stage} inquiry={inquiry} onOpenChat={onOpenChat} />
+            ) : null}
+
+            {pendingNote ? (
+              <AppCard style={{ marginTop: spacing.lg }}>
+                <AppText muted>{pendingNote}</AppText>
+              </AppCard>
+            ) : null}
+
+            <AppCard style={{ marginTop: spacing.lg }}>
+              <Row
+                label="Departure"
+                value={`${formatTripDateTime(trip.departureAt, { dateStyle: 'medium', timeStyle: 'short' })}${tripTimeZoneSuffix()}`}
+              />
+              <Row label="Seats requested" value={String(inquiry.requestedSeats)} />
+              <Row label="Your pickup" value={ownPickupPoint(inquiry).label} />
+              <Row label="Your drop-off" value={ownDropoffPoint(inquiry).label} />
+              {inquiry.pickupNote ? <Row label="Your note" value={inquiry.pickupNote} /> : null}
+              <Row label="Vehicle" value={vehicleDisplayName(trip.userVehicle)} />
+              {fare ? <Row label="Price / seat" value={fare.perSeat} /> : null}
+              {fare && inquiry.requestedSeats > 1 ? <Row label="Total" value={fare.total} /> : null}
+            </AppCard>
+          </>
+        )}
 
         {inquiry.message ? (
           <AppCard style={{ marginTop: spacing.lg }}>
@@ -71,120 +112,39 @@ export function RiderPreLiveView({
           </AppCard>
         ) : null}
 
-        {inquiry.status === 'ACCEPTED' ? (
-          <AppCard style={{ marginTop: spacing.lg, borderColor: colors.success }}>
-            <AppText variant="label" color={colors.success}>
-              Accepted!
-            </AppText>
-            <AppText muted style={{ marginTop: spacing.xs }}>
-              Contact {inquiry.trip.postedBy.name} to confirm pickup details.
-            </AppText>
-            <AppButton
-              title="Contact via WhatsApp"
-              variant="secondary"
-              style={{ marginTop: spacing.md }}
-              onPress={() => {
-                // wa.me requires digits only — no leading '+', spaces, or dashes.
-                const number = inquiry.trip.contactNumber.replace(/\D/g, '');
-                Linking.openURL(`https://wa.me/${number}`).catch(() => {});
-              }}
-            />
-          </AppCard>
-        ) : null}
-
-        {inquiry.status === 'ACCEPTED' && inquiry.trip.status !== TripStatus.ACTIVE ? (
+        {/* rejectionReason also carries why a request was cancelled by the
+            driver's trip cancellation, or why it expired. */}
+        {reasonHeading && inquiry.rejectionReason ? (
           <AppCard style={{ marginTop: spacing.lg }}>
-            <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-              Trip status
-            </AppText>
-            {inquiry.droppedOffAt ? (
-              <AppText muted variant="caption">
-                {inquiry.pickupSource === PickupSource.AUTO_ON_TRIP_END
-                  ? 'Trip completed.'
-                  : `You were dropped off at ${formatTime(inquiry.droppedOffAt)}.`}
-              </AppText>
-            ) : inquiry.pickupConfirmedAt ? (
-              <AppText muted variant="caption">
-                You&apos;re on the trip — picked up at {formatTime(inquiry.pickupConfirmedAt)}.
-              </AppText>
-            ) : inquiry.trip.status === TripStatus.IN_PROGRESS ? (
-              <AppText muted variant="caption">
-                Your driver has started the trip.
-              </AppText>
-            ) : (
-              <AppText muted variant="caption">
-                Trip completed.
-              </AppText>
-            )}
-          </AppCard>
-        ) : null}
-
-        {showArriveButton || showCompleteButton ? (
-          <AppCard style={{ marginTop: spacing.lg }}>
-            <AppText variant="label" style={{ marginBottom: spacing.sm }}>
-              Ride actions
-            </AppText>
-
-            {showArriveButton ? (
-              <View style={{ marginBottom: showCompleteButton ? spacing.md : 0 }}>
-                <AppButton
-                  title="I've arrived"
-                  loading={riderActions.actioningType === TripEventType.ARRIVED}
-                  disabled={!canArrive || riderActions.actioningType !== null}
-                  onPress={() => riderActions.handleRiderEvent(TripEventType.ARRIVED)}
-                />
-                {!canArrive ? (
-                  <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
-                    {arriveDisabledReason}
-                  </AppText>
-                ) : null}
-              </View>
-            ) : null}
-
-            {showCompleteButton ? (
-              <View>
-                <AppButton
-                  title="Complete ride"
-                  variant={showArriveButton ? 'secondary' : 'primary'}
-                  loading={riderActions.actioningType === TripEventType.DROPOFF}
-                  disabled={!canComplete || riderActions.actioningType !== null}
-                  onPress={() => riderActions.handleRiderEvent(TripEventType.DROPOFF)}
-                />
-                {!canComplete ? (
-                  <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
-                    {completeDisabledReason}
-                  </AppText>
-                ) : null}
-              </View>
-            ) : null}
-          </AppCard>
-        ) : null}
-
-        {inquiry.status === 'REJECTED' && inquiry.rejectionReason ? (
-          <AppCard style={{ marginTop: spacing.lg }}>
-            <AppText variant="label">Note from the driver</AppText>
+            <AppText variant="label">{reasonHeading}</AppText>
             <AppText muted style={{ marginTop: spacing.xs }}>
               {inquiry.rejectionReason}
             </AppText>
           </AppCard>
         ) : null}
 
-        {riderActions.actionError ? (
-          <AppText color={colors.danger} style={{ marginTop: spacing.md }}>
-            {riderActions.actionError}
-          </AppText>
-        ) : null}
-
         {availableActions.includes(TripInquiryStatus.CANCELLED) ? (
           <AppButton
-            title={inquiry.status === 'ACCEPTED' ? 'Cancel my seat' : 'Cancel request'}
+            title={inquiry.status === TripInquiryStatus.ACCEPTED ? 'Cancel my seat' : 'Cancel request'}
             variant="danger"
-            loading={riderActions.updateStatusPending}
-            onPress={riderActions.handleCancel}
+            onPress={riderActions.openCancelConfirm}
             style={{ marginTop: spacing.xl }}
           />
         ) : null}
       </ScrollView>
-    </AppScreen>
+
+      <RiderConfirmSheet inquiry={inquiry} riderActions={riderActions} />
+
+      {/* Chat — only reachable from the no-show card while the trip is still
+          running (see SeatOutcomeCard), or a chat push's deep link then. */}
+      <ChatModalSheet
+        visible={chatOpen}
+        onClose={onCloseChat}
+        tripInquiryId={inquiry.id}
+        riderName={trip.postedBy.name}
+        pickupLabel={ownPickupPoint(inquiry).label}
+        dropoffLabel={ownDropoffPoint(inquiry).label}
+      />
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { TripStatus } from '../../../types/enums';
+import { TripInquiryStatus, TripStatus } from '../../../types/enums';
 import { computeRideActionAvailability } from './rideActionAvailability';
 
 type Params = Parameters<typeof computeRideActionAvailability>[0];
@@ -8,11 +8,13 @@ type Params = Parameters<typeof computeRideActionAvailability>[0];
 // An accepted rider mid-trip, standing right at both stops with a live fix.
 function params(overrides: Partial<Params> = {}): Params {
   return {
+    inquiryStatus: TripInquiryStatus.ACCEPTED,
+    tripStatus: TripStatus.IN_PROGRESS,
     pickupConfirmedAt: null,
     droppedOffAt: null,
-    tripStatus: TripStatus.IN_PROGRESS,
-    hasPickupStop: true,
-    hasDropoffStop: true,
+    noShowAt: null,
+    pickupStopLocated: true,
+    dropoffStopLocated: true,
     pickupDistanceM: 0,
     dropoffDistanceM: 0,
     locationDenied: false,
@@ -22,23 +24,50 @@ function params(overrides: Partial<Params> = {}): Params {
 }
 
 const ALL_TRIP_STATUSES = Object.values(TripStatus);
+const ALL_INQUIRY_STATUSES = Object.values(TripInquiryStatus);
 
-describe('computeRideActionAvailability — arrive (pickup)', () => {
-  it('shows the arrive button only while the trip is IN_PROGRESS', () => {
+describe('computeRideActionAvailability — who may act at all', () => {
+  it('offers both actions only on an ACCEPTED seat while the trip is IN_PROGRESS', () => {
     for (const tripStatus of ALL_TRIP_STATUSES) {
-      expect(computeRideActionAvailability(params({ tripStatus })).showArriveButton).toBe(
-        tripStatus === TripStatus.IN_PROGRESS,
-      );
+      for (const inquiryStatus of ALL_INQUIRY_STATUSES) {
+        const result = computeRideActionAvailability(params({ tripStatus, inquiryStatus }));
+        const riding = tripStatus === TripStatus.IN_PROGRESS && inquiryStatus === TripInquiryStatus.ACCEPTED;
+        expect([tripStatus, inquiryStatus, result.showArriveButton]).toEqual([tripStatus, inquiryStatus, riding]);
+        expect([tripStatus, inquiryStatus, result.showCompleteButton]).toEqual([tripStatus, inquiryStatus, riding]);
+      }
     }
   });
 
+  it('never offers the complete button once the trip is COMPLETED (the backend refuses events then)', () => {
+    expect(computeRideActionAvailability(params({ tripStatus: TripStatus.COMPLETED })).showCompleteButton).toBe(false);
+  });
+
+  it('hides both actions for a rider marked as a no-show (the backend answers 409)', () => {
+    const result = computeRideActionAvailability(params({ noShowAt: '2026-10-08T10:05:00.000Z' }));
+    expect(result.showArriveButton).toBe(false);
+    expect(result.showCompleteButton).toBe(false);
+  });
+
+  it('treats a missing noShowAt (older backend) as not a no-show', () => {
+    const result = computeRideActionAvailability(params({ noShowAt: undefined }));
+    expect(result.showArriveButton).toBe(true);
+    expect(result.showCompleteButton).toBe(true);
+  });
+});
+
+describe('computeRideActionAvailability — arrive (pickup)', () => {
   it('hides the arrive button once pickup is confirmed', () => {
     const result = computeRideActionAvailability(params({ pickupConfirmedAt: '2026-10-08T10:00:00.000Z' }));
     expect(result.showArriveButton).toBe(false);
   });
 
-  it('hides the arrive button when the rider has no pickup stop', () => {
-    expect(computeRideActionAvailability(params({ hasPickupStop: false })).showArriveButton).toBe(false);
+  it('hides the arrive button once the rider is dropped off', () => {
+    const result = computeRideActionAvailability(params({ droppedOffAt: '2026-10-08T11:00:00.000Z' }));
+    expect(result.showArriveButton).toBe(false);
+  });
+
+  it('hides the arrive button when the pickup stop has no coordinates (or there is none)', () => {
+    expect(computeRideActionAvailability(params({ pickupStopLocated: false })).showArriveButton).toBe(false);
   });
 
   it('enables arrive inside the 100 m radius, inclusive', () => {
@@ -52,17 +81,13 @@ describe('computeRideActionAvailability — arrive (pickup)', () => {
 });
 
 describe('computeRideActionAvailability — complete (drop-off)', () => {
-  it('shows the complete button for IN_PROGRESS and COMPLETED trips only', () => {
-    for (const tripStatus of ALL_TRIP_STATUSES) {
-      expect(computeRideActionAvailability(params({ tripStatus })).showCompleteButton).toBe(
-        tripStatus === TripStatus.IN_PROGRESS || tripStatus === TripStatus.COMPLETED,
-      );
-    }
-  });
-
   it('hides the complete button once the rider is dropped off', () => {
     const result = computeRideActionAvailability(params({ droppedOffAt: '2026-10-08T11:00:00.000Z' }));
     expect(result.showCompleteButton).toBe(false);
+  });
+
+  it('still offers complete before the driver taps pickup (a rider may self-report drop-off)', () => {
+    expect(computeRideActionAvailability(params({ pickupConfirmedAt: null })).showCompleteButton).toBe(true);
   });
 
   it('enables complete inside the 100 m radius, inclusive', () => {
@@ -71,8 +96,8 @@ describe('computeRideActionAvailability — complete (drop-off)', () => {
     expect(computeRideActionAvailability(params({ dropoffDistanceM: null })).canComplete).toBe(false);
   });
 
-  it('allows completing anywhere when there is no drop-off stop to geofence', () => {
-    const result = computeRideActionAvailability(params({ hasDropoffStop: false, dropoffDistanceM: null }));
+  it('allows completing anywhere when the drop-off stop has nothing to geofence against', () => {
+    const result = computeRideActionAvailability(params({ dropoffStopLocated: false, dropoffDistanceM: null }));
     expect(result.canComplete).toBe(true);
   });
 });

@@ -51,6 +51,22 @@ module.exports = {
         {
           locationWhenInUsePermission:
             'Allow $(PRODUCT_NAME) to use your location to show nearby vehicles and carpools.',
+          // A driver's location keeps reaching their riders while a trip is in
+          // progress and the app is in the background but still running
+          // (src/features/liveRide/backgroundLocation) — with When-In-Use
+          // permission only (owner decision):
+          // - iOS: UIBackgroundModes 'location' (startLocationUpdatesAsync
+          //   refuses to start without it), with the blue indicator.
+          isIosBackgroundLocationEnabled: true,
+          // - Android: FOREGROUND_SERVICE + FOREGROUND_SERVICE_LOCATION for the
+          //   "Trip in progress" notification's service (required to start it
+          //   on Android 14+; needs the Play Console foreground-service
+          //   declaration).
+          isAndroidForegroundServiceEnabled: true,
+          // - Never ACCESS_BACKGROUND_LOCATION ("Allow all the time"): the
+          //   foreground service doesn't need it, and tracking stops when the
+          //   app is swiped away.
+          isAndroidBackgroundLocationEnabled: false,
         },
       ],
       [

@@ -1,14 +1,15 @@
 import { ScrollView, View } from 'react-native';
 import { AppCard, AppText, DetailRow } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import type { ManifestRider, TripManifest } from '../../../api/trips.api';
+import type { TripManifest } from '../../../api/trips.api';
 import type { TripDetail } from '../../../types/api.types';
 import { formatDate, formatPrice, titleCase } from '../../../utils/format';
+import type { CockpitRider } from './stopProgress';
 
 interface DetailsTabProps {
   trip: TripDetail;
   manifest: TripManifest | undefined;
-  riders: ManifestRider[];
+  riders: CockpitRider[];
 }
 
 // Details tab (design spec §4.3) — exactly three text-only Cards, computed
@@ -19,7 +20,10 @@ export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
 
   const pickupStopsCount = (manifest?.routeStops ?? []).filter((s) => s.type === 'PICKUP').length;
   const dropoffStopsCount = (manifest?.routeStops ?? []).length - pickupStopsCount;
-  const totalSeats = riders.reduce((sum, r) => sum + r.requestedSeats, 0);
+  // A no-show didn't ride, so their seats earn nothing — they're counted
+  // separately instead.
+  const noShowCount = riders.filter((r) => r.noShow).length;
+  const totalSeats = riders.filter((r) => !r.noShow).reduce((sum, r) => sum + r.requestedSeats, 0);
   const pricePerSeatNum =
     typeof trip.pricePerSeat === 'string' ? parseFloat(trip.pricePerSeat) : (trip.pricePerSeat as number);
   const earningsEstimate = Number.isFinite(pricePerSeatNum) ? pricePerSeatNum * totalSeats : 0;
@@ -39,7 +43,10 @@ export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
             <DetailRow label="Route" value={`${trip.originCity} → ${trip.destinationCity}`} />
             <DetailRow label="Started" value={startedLabel} />
             <DetailRow label="Stops" value={`${pickupStopsCount} pickups · ${dropoffStopsCount} dropoffs`} />
-            <DetailRow label="Riders" value={`${riders.length} riders · ${totalSeats} seats`} />
+            <DetailRow
+              label="Riders"
+              value={`${riders.length} riders · ${totalSeats} seats${noShowCount > 0 ? ` · ${noShowCount} no-show` : ''}`}
+            />
           </View>
         </AppCard>
 

@@ -3,7 +3,7 @@ import { View } from 'react-native';
 
 import { AppButton, AppSheet, AppText, StatusBadge, TabBar, type TabBarItem } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import type { ManifestRider, TripManifest } from '../../../api/trips.api';
+import type { TripManifest } from '../../../api/trips.api';
 import type { TripDetail } from '../../../types/api.types';
 import { TripStatus, tripStatusMeta, TripEventType } from '../../../types/enums';
 import { formatDistance } from '../../../utils/format';
@@ -11,10 +11,16 @@ import { LiveTripMap, type LiveTripStop } from '../../liveRide/components/LiveTr
 import { ChatModalSheet } from '../../liveRide/components/ChatModalSheet';
 import { openMapsNavigation } from '../../liveRide/openMapsNavigation';
 import { ARRIVAL_RADIUS_METERS, type DriverStopProgress } from './useDriverStopProgress';
+import type { CockpitRider } from './stopProgress';
+import type { NoShowContext } from './noShow';
+import { StopWaitTimer } from './StopWaitTimer';
 import type { DriverLocationWatch } from './useDriverLocationWatch';
+import type { DriverBackgroundLocation } from '../../liveRide/backgroundLocation/useDriverBackgroundLocation';
+import { BackgroundLocationNotice } from './BackgroundLocationNotice';
 import type { DriverTripActions } from './useDriverTripActions';
 import type { DriverChatInbox } from './useDriverChatInbox';
 import type { OfflineTripQueue } from '../offlineSync';
+import { OfflineQueueNotice } from '../components/OfflineQueueNotice';
 import { StopsTab } from './StopsTab';
 import { RidersTab } from './RidersTab';
 import { DetailsTab } from './DetailsTab';
@@ -38,6 +44,7 @@ interface DriverLiveCockpitProps {
   isConnected: boolean;
   stopProgress: DriverStopProgress;
   location: DriverLocationWatch;
+  backgroundLocation: DriverBackgroundLocation;
   actions: DriverTripActions;
   chat: DriverChatInbox;
   offlineQueue: OfflineTripQueue;
@@ -56,6 +63,7 @@ export function DriverLiveCockpit({
   isConnected,
   stopProgress,
   location,
+  backgroundLocation,
   actions,
   chat,
   offlineQueue,
@@ -73,10 +81,29 @@ export function DriverLiveCockpit({
     setSelectedStopId,
     previewStop,
     routeDirections,
+    arrivedStopIds,
+    serverClock,
   } = stopProgress;
   const { currentPosition, locationDenied, lastLocationUpdateAt } = location;
 
-  const nextStopArrived = !!nextStop && actions.arrivedStopIds.has(nextStop.id);
+  // Reached per the server (survives a restart) or tapped on this device.
+  const nextStopArrived = !!nextStop && arrivedStopIds.has(nextStop.id);
+  const arrivalPending = !!nextStop && actions.isArrivalPending(nextStop.id);
+  // The server's arrival time at the next stop, for its "Waiting m:ss" line —
+  // a pickup stop the driver is waiting at.
+  const nextStopArrivedAt = nextStop?.type === 'PICKUP' ? nextStop.arrivedAt : null;
+
+  // Everything the per-rider no-show gate needs beyond the rider. serverClock
+  // is null on an older backend, which keeps the no-show action hidden.
+  const noShowContext: NoShowContext = {
+    routeStops: manifest?.routeStops ?? [],
+    serverClock,
+    queuedArrivalStopIds: actions.queuedArrivalStopIds,
+  };
+  // Only the backend that times no-shows also leaves them out of End's
+  // auto-completion; an older one completes every untapped rider.
+  const noShowSupported = serverClock !== null;
+  const noShowCount = mergedRiders.filter((rider) => rider.noShow).length;
 
   // Ride header: "On Trip" reads oddly once the ride has actually ended, so
   // the header badge swaps to the trip's real completed state — tripStatusMeta
@@ -113,7 +140,8 @@ export function DriverLiveCockpit({
 
   const chatRider = chat.chatTarget ? mergedRiders.find((r) => r.id === chat.chatTarget?.id) : undefined;
 
-  const handleToggleRiderStatus = (rider: ManifestRider) => {
+  // A no-show rider has no pickup yet, so this sends PICKUP — reversing it.
+  const handleToggleRiderStatus = (rider: CockpitRider) => {
     actions.handleRiderEvent(rider.id, rider.pickupConfirmedAt ? TripEventType.DROPOFF : TripEventType.PICKUP);
   };
 
@@ -144,14 +172,10 @@ export function DriverLiveCockpit({
           <StatusBadge label={rideBadge.label} tone={rideBadge.tone} />
         </View>
 
-        {offlineQueue.pendingCount > 0 ? (
-          <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: colors.surfaceAlt }}>
-            <AppText variant="caption">
-              {offlineQueue.flushing
-                ? 'Syncing…'
-                : `${offlineQueue.pendingCount} action${offlineQueue.pendingCount !== 1 ? 's' : ''} queued — no connection yet. They'll sync automatically once you're back online.`}
-            </AppText>
-          </View>
+        <OfflineQueueNotice queue={offlineQueue} variant="bar" />
+        {/* Only while the ride is live — nothing to share once it's over. */}
+        {effectiveInProgress && !effectiveCompleted ? (
+          <BackgroundLocationNotice backgroundLocation={backgroundLocation} />
         ) : null}
 
         {/* Map section: pinned, ~45% of the remaining height (never
@@ -213,7 +237,7 @@ export function DriverLiveCockpit({
                   <>
                     <AppButton
                       title={nextStopArrived ? 'Already reached' : 'Reached'}
-                      loading={actions.recordEventPending}
+                      loading={arrivalPending}
                       disabled={nextStopArrived || !canConfirmArrival}
                       onPress={() => actions.handleArrived(nextStop, currentPosition)}
                     />
@@ -222,6 +246,12 @@ export function DriverLiveCockpit({
                         Get within {ARRIVAL_RADIUS_METERS}m of this stop to confirm arrival.
                       </AppText>
                     ) : null}
+                    <StopWaitTimer
+                      arrivedAt={nextStopArrivedAt}
+                      serverClock={serverClock}
+                      visible
+                      style={{ marginTop: spacing.xs }}
+                    />
                   </>
                 )}
               </View>
@@ -246,7 +276,9 @@ export function DriverLiveCockpit({
                 selectedStopId={selectedStopId}
                 nextStopArrived={nextStopArrived}
                 canConfirmArrival={canConfirmArrival}
-                arrivedPending={actions.recordEventPending}
+                arrivedPending={arrivalPending}
+                serverClock={serverClock}
+                visible={activeTab === 'stops'}
                 onConfirmArrival={(stop) => actions.handleArrived(stop, currentPosition)}
                 onSelectStop={setSelectedStopId}
               />
@@ -255,10 +287,12 @@ export function DriverLiveCockpit({
               <RidersTab
                 loading={manifestLoading}
                 riders={mergedRiders}
-                noShowIds={actions.noShowIds}
-                pending={actions.recordEventPending}
+                noShowContext={noShowContext}
+                visible={activeTab === 'riders'}
+                isRiderPending={actions.isRiderActionPending}
                 unreadCounts={chat.unreadCounts}
                 onToggleRiderStatus={handleToggleRiderStatus}
+                onNoShow={actions.openNoShow}
                 onChat={chat.openChat}
               />
             </View>
@@ -313,7 +347,25 @@ export function DriverLiveCockpit({
       <AppSheet visible={actions.endConfirming} onClose={() => actions.setEndConfirming(false)} title="End this ride?">
         <AppText muted variant="caption" style={{ marginBottom: spacing.md }}>
           Any rider you haven&apos;t tapped pickup/drop-off for will be marked as completed automatically.
+          {noShowSupported
+            ? noShowCount > 0
+              ? ` ${noShowCount} rider${noShowCount !== 1 ? 's' : ''} marked as no-show won't be counted as completed.`
+              : " Riders marked as no-show aren't counted as completed."
+            : null}
         </AppText>
+        {/* End syncs this trip's queued actions first; the warning shows only
+            when some still couldn't go — ending now queues End behind them. */}
+        {actions.endSyncing ? (
+          <AppText muted variant="caption" style={{ marginBottom: spacing.md }}>
+            Syncing your queued actions before ending…
+          </AppText>
+        ) : actions.endUnsyncedCount > 0 ? (
+          <AppText color={colors.warning} variant="caption" style={{ marginBottom: spacing.md }}>
+            {actions.endUnsyncedCount} earlier action{actions.endUnsyncedCount !== 1 ? 's' : ''} still{' '}
+            {actions.endUnsyncedCount !== 1 ? "haven't" : "hasn't"} synced. If you end now, the ride ends once{' '}
+            {actions.endUnsyncedCount !== 1 ? 'they sync' : 'it syncs'}, in order, when you&apos;re back online.
+          </AppText>
+        ) : null}
         {actions.actionError ? (
           <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.md }}>
             {actions.actionError}
@@ -324,7 +376,45 @@ export function DriverLiveCockpit({
             <AppButton title="Not yet" variant="secondary" onPress={() => actions.setEndConfirming(false)} />
           </View>
           <View style={{ flex: 1 }}>
-            <AppButton title="End ride" variant="danger" loading={actions.endTripPending} onPress={actions.handleEnd} />
+            <AppButton
+              title={actions.endUnsyncedCount > 0 ? 'End anyway' : 'End ride'}
+              variant="danger"
+              loading={actions.endTripPending || actions.endSyncing}
+              onPress={actions.handleEnd}
+            />
+          </View>
+        </View>
+      </AppSheet>
+
+      {/* "Didn't show" confirmation — opened from a rider's card once the
+          five-minute wait at their pickup stop is over. A refusal (e.g. the
+          server's own wait not over yet) stays here, in the sheet. */}
+      <AppSheet
+        visible={actions.noShowOpen}
+        onClose={actions.closeNoShow}
+        title={actions.noShowTarget ? `Mark ${actions.noShowTarget.riderName} as a no-show?` : undefined}
+      >
+        <AppText muted variant="caption" style={{ marginBottom: spacing.md }}>
+          {actions.noShowTarget?.riderName ?? 'The rider'} will be notified that you marked them as a no-show
+          {actions.noShowTarget?.stopLabel ? ` at ${actions.noShowTarget.stopLabel}` : ''}, and won&apos;t be counted as
+          a completed rider. If they turn up after all, tap Picked up on their card to undo it.
+        </AppText>
+        {actions.noShowError ? (
+          <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.md }}>
+            {actions.noShowError}
+          </AppText>
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <AppButton title="Not now" variant="secondary" onPress={actions.closeNoShow} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppButton
+              title="Mark no-show"
+              variant="danger"
+              loading={!!actions.noShowTarget && actions.isRiderActionPending(actions.noShowTarget.riderId)}
+              onPress={() => actions.confirmNoShow(currentPosition)}
+            />
           </View>
         </View>
       </AppSheet>

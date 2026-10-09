@@ -4,6 +4,10 @@ import {
   BOOKING_TRANSITIONS,
   BookingRequestStatus,
   bookingStatusMeta,
+  canOwnerEditUserVehicle,
+  DocumentStatus,
+  DocumentType,
+  Market,
   PickupSource,
   TripEventType,
   TripInquiryStatus,
@@ -33,7 +37,25 @@ const BACKEND_ENUM_VALUES = {
   PickupSource: ['DRIVER_TAP', 'AUTO_ON_TRIP_END'],
   UserVehicleStatus: ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SUSPENDED'],
   BookingRequestStatus: ['PENDING', 'CONTACTED', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+  Market: ['PK', 'SA', 'AE'],
+  DocumentStatus: ['PENDING', 'APPROVED', 'REJECTED'],
+  DocumentType: [
+    'BUSINESS_LICENSE',
+    'TRADE_LICENSE',
+    'OWNERSHIP_PROOF',
+    'ID_DOCUMENT',
+    'ID_DOCUMENT_FRONT',
+    'ID_DOCUMENT_BACK',
+    'DRIVING_LICENSE',
+    'VEHICLE_REGISTRATION',
+    'VEHICLE_INSURANCE',
+    'OTHER',
+  ],
 };
+
+// user-vehicles.service.ts OWNER_EDITABLE_USER_VEHICLE_STATUSES: the statuses
+// PATCH /my/vehicles/:id accepts (anything else is a 409).
+const BACKEND_OWNER_EDITABLE_USER_VEHICLE_STATUSES = [UserVehicleStatus.REJECTED, UserVehicleStatus.PENDING_REVIEW];
 
 // src/common/enums/trip-inquiry-status.enum.ts TRIP_INQUIRY_NEXT_STATES.
 const BACKEND_TRIP_INQUIRY_NEXT_STATES: Record<TripInquiryStatus, TripInquiryStatus[]> = {
@@ -54,6 +76,11 @@ const BACKEND_TRIP_INQUIRY_NEXT_STATES: Record<TripInquiryStatus, TripInquirySta
 // (UpdateTripInquiryStatusDto's USER_SETTABLE_TRIP_INQUIRY_STATUSES omits it).
 const BACKEND_RIDER_SETTABLE = [TripInquiryStatus.CANCELLED];
 const BACKEND_POSTER_SETTABLE = [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED];
+
+// trip-inquiries.service.ts SEAT_CANCEL_BLOCKED_TRIP_STATUSES: a rider can't
+// cancel a confirmed seat once its trip is over, called off or taken down
+// (a 409). PENDING requests aren't gated on the trip's status.
+const BACKEND_SEAT_CANCEL_BLOCKED_TRIP_STATUSES = [TripStatus.COMPLETED, TripStatus.CANCELLED, TripStatus.SUSPENDED];
 
 // TripsService status gates for the poster's own trip: update, cancel and
 // startTrip require ACTIVE; endTrip requires IN_PROGRESS.
@@ -93,6 +120,9 @@ describe('enum mirrors', () => {
     ['PickupSource', PickupSource],
     ['UserVehicleStatus', UserVehicleStatus],
     ['BookingRequestStatus', BookingRequestStatus],
+    ['Market', Market],
+    ['DocumentStatus', DocumentStatus],
+    ['DocumentType', DocumentType],
   ];
 
   it.each(mirrors)('%s matches the backend Prisma enum', (name, mobileEnum) => {
@@ -150,6 +180,22 @@ describe('trip inquiry actions', () => {
     expect(tripInquiryRiderActions(TripInquiryStatus.ACCEPTED)).toEqual([TripInquiryStatus.CANCELLED]);
   });
 
+  it.each(Object.values(TripStatus))('lets a rider cancel a confirmed seat on a %s trip only where the backend does', (tripStatus) => {
+    expect(tripInquiryRiderActions(TripInquiryStatus.ACCEPTED, tripStatus)).toEqual(
+      BACKEND_SEAT_CANCEL_BLOCKED_TRIP_STATUSES.includes(tripStatus) ? [] : [TripInquiryStatus.CANCELLED],
+    );
+  });
+
+  it('keeps seat cancel available while the trip is IN_PROGRESS (owner decision; the backend allows it)', () => {
+    expect(tripInquiryRiderActions(TripInquiryStatus.ACCEPTED, TripStatus.IN_PROGRESS)).toEqual([
+      TripInquiryStatus.CANCELLED,
+    ]);
+  });
+
+  it.each(Object.values(TripStatus))('lets a rider withdraw a PENDING request whatever the trip status (%s)', (tripStatus) => {
+    expect(tripInquiryRiderActions(TripInquiryStatus.PENDING, tripStatus)).toEqual([TripInquiryStatus.CANCELLED]);
+  });
+
   it('never offers EXPIRED to anyone', () => {
     for (const status of Object.values(TripInquiryStatus)) {
       expect(tripInquiryRiderActions(status)).not.toContain(TripInquiryStatus.EXPIRED);
@@ -175,5 +221,11 @@ describe('userBookingActions', () => {
         status === BookingRequestStatus.PENDING ? [BookingRequestStatus.CANCELLED] : [],
       );
     }
+  });
+});
+
+describe('canOwnerEditUserVehicle', () => {
+  it.each(Object.values(UserVehicleStatus))('matches the backend owner-edit gate for %s', (status) => {
+    expect(canOwnerEditUserVehicle(status)).toBe(BACKEND_OWNER_EDITABLE_USER_VEHICLE_STATUSES.includes(status));
   });
 });
