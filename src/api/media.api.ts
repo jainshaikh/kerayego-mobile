@@ -50,8 +50,4 @@ export const mediaApi = {
 
     return res.data.data;
   },
-
-  delete: async (publicId: string) => {
-    await apiClient.delete(`/media/${encodeURIComponent(publicId)}`);
-  },
 };

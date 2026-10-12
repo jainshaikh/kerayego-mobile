@@ -12,16 +12,24 @@ export interface TripFilters {
   limit?: number;
 }
 
+export interface CreateTripStopPayload {
+  label: string;
+  lat?: number;
+  lng?: number;
+}
+
 export interface CreateTripPayload {
   userVehicleId: string;
   originCity: string;
   destinationCity: string;
-  pickupPoint: string;
+  pickupPoint?: string;
   pickupLat?: number;
   pickupLng?: number;
   dropoffPoint?: string;
   dropoffLat?: number;
   dropoffLng?: number;
+  pickupStops?: CreateTripStopPayload[];
+  dropoffStops?: CreateTripStopPayload[];
   departureAt: string; // ISO date-time, must be in the future
   availableSeats: number;
   pricePerSeat: number;

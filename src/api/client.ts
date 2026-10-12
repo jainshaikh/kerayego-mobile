@@ -131,8 +131,7 @@ async function refreshOrExpire(epoch: number): Promise<string | null> {
   return result.accessToken;
 }
 
-// 401: unknown/expired/revoked/already-rotated token. 403: suspended account
-// (auth.service.ts refresh).
+// 401: unknown/expired/revoked/already-rotated token. 403: suspended account.
 function isRefreshRejected(error: unknown): boolean {
   const status = error instanceof AxiosError ? error.response?.status : undefined;
   return status === 401 || status === 403;

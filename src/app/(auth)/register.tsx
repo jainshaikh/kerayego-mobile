@@ -32,7 +32,13 @@ export default function RegisterScreen() {
   const onSubmit = async (values: RegisterFormValues) => {
     setFormError(null);
     try {
-      const result = await register(values);
+      const { confirmPassword: _confirmPassword, ...payload } = values;
+      const result = await register({
+        ...payload,
+        name: payload.name.trim(),
+        email: payload.email.trim(),
+        phone: payload.phone.trim(),
+      });
       setSuccessMessage(result.message);
     } catch (error) {
       setFormError(normalizeApiError(error).message);

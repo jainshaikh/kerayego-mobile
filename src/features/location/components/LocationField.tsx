@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 
 import { AppButton, AppInput, AppText } from '../../../components/ui';
@@ -25,22 +25,13 @@ interface LocationFieldProps {
 }
 
 const DEBOUNCE_MS = 300;
-interface Measured {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
-// Mobile equivalent of web's MapLocationField/MapLocationPicker/
-// PlaceAutocompleteInput trio, collapsed into one component: an address
-// input with Places-autocomplete suggestions, plus a "Choose on map" button
-// that opens a bottom-sheet map picker (tap/drag pin + current location).
-// Suggestions render inside a transparent Modal positioned over the input —
-// RN has no DOM "outside click", so the Modal's full-screen backdrop
-// Pressable is what makes tapping anywhere else close the dropdown, and the
-// activeAutocomplete registry is what makes focusing a sibling field
-// (e.g. drop-off) close this one's dropdown the same way the web fix does.
+// Address input with Places-autocomplete suggestions, plus a "Choose on map"
+// button that opens a bottom-sheet map picker (tap/drag pin + current location).
+// Suggestions render directly in the component tree beneath the input rather
+// than in a native Modal — on Android, a Modal steals window focus and immediately
+// blurs the TextInput and dismisses the keyboard. An in-tree dropdown keeps focus
+// and the keyboard active while suggestions fetch and display asynchronously.
 export function LocationField({
   label,
   required,
@@ -56,13 +47,11 @@ export function LocationField({
 }: LocationFieldProps) {
   const { colors, spacing, radii } = useTheme();
   const instanceId = useId();
-  const fieldRef = useRef<View>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sessionTokenRef = useRef<string>(Crypto.randomUUID());
 
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [open, setOpen] = useState(false);
-  const [measured, setMeasured] = useState<Measured | null>(null);
   const [mapSheetVisible, setMapSheetVisible] = useState(false);
 
   useEffect(() => subscribeActiveAutocomplete((activeId) => {
@@ -100,7 +89,6 @@ export function LocationField({
 
   const handleFocus = () => {
     setActiveAutocomplete(instanceId);
-    fieldRef.current?.measureInWindow((x, y, width, height) => setMeasured({ x, y, width, height }));
     if (suggestions.length > 0) setOpen(true);
   };
 
@@ -122,64 +110,84 @@ export function LocationField({
   };
 
   return (
-    <View>
-      <View ref={fieldRef} collapsable={false}>
-        <AppInput
-          label={label ? `${label}${required ? ' *' : ''}` : undefined}
-          placeholder={placeholder}
-          value={value}
-          onChangeText={handleChangeText}
-          onFocus={handleFocus}
-          error={error}
-          autoCorrect={false}
-        />
-      </View>
+    <View style={{ position: 'relative' }}>
+      <AppInput
+        label={label ? `${label}${required ? ' *' : ''}` : undefined}
+        placeholder={placeholder}
+        value={value}
+        onChangeText={handleChangeText}
+        onFocus={handleFocus}
+        error={error}
+        autoCorrect={false}
+      />
+
+      {open && suggestions.length > 0 ? (
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: radii.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            maxHeight: 200,
+            marginTop: -spacing.xs,
+            marginBottom: spacing.sm,
+            ...shadowStyle,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.xs,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            }}
+          >
+            <AppText muted variant="caption" style={{ fontSize: 11 }}>
+              Suggestions
+            </AppText>
+            <Pressable onPress={() => setOpen(false)} hitSlop={8}>
+              <AppText muted variant="caption" style={{ fontSize: 13, paddingHorizontal: 4 }}>
+                ✕
+              </AppText>
+            </Pressable>
+          </View>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+          >
+            {suggestions.map((s) => (
+              <Pressable
+                key={s.placeId}
+                onPress={() => handleSelect(s)}
+                style={({ pressed }) => ({
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                  backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
+                })}
+              >
+                <AppText variant="caption">{s.text}</AppText>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
 
       {showMapPicker ? (
         <AppButton
           title="Choose on map"
           variant="secondary"
           fullWidth={false}
-          onPress={() => setMapSheetVisible(true)}
+          onPress={() => {
+            setOpen(false);
+            setMapSheetVisible(true);
+          }}
           style={{ marginTop: -spacing.sm, marginBottom: spacing.md, alignSelf: 'flex-start' }}
         />
       ) : null}
-
-      <Modal visible={open} transparent animationType="none" onRequestClose={() => setOpen(false)}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-        {measured ? (
-          <View
-            style={{
-              position: 'absolute',
-              left: measured.x,
-              top: measured.y + measured.height + 4,
-              width: measured.width,
-              maxHeight: 240,
-              backgroundColor: colors.surface,
-              borderRadius: radii.md,
-              borderWidth: 1,
-              borderColor: colors.border,
-              ...shadowStyle,
-            }}
-          >
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {suggestions.map((s) => (
-                <Pressable
-                  key={s.placeId}
-                  onPress={() => handleSelect(s)}
-                  style={({ pressed }) => ({
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.sm,
-                    backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
-                  })}
-                >
-                  <AppText variant="caption">{s.text}</AppText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-      </Modal>
 
       <LocationMapSheet
         visible={mapSheetVisible}

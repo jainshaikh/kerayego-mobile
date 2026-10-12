@@ -16,16 +16,21 @@ export default function NewTripScreen() {
   const handleSubmit = async (values: TripFormValues) => {
     setFormError(null);
     try {
+      const firstPickup = values.pickupStops?.[0];
+      const lastDropoff = values.dropoffStops?.[values.dropoffStops.length - 1];
+
       await createTrip.mutateAsync({
         userVehicleId: values.userVehicleId,
         originCity: values.originCity,
         destinationCity: values.destinationCity,
-        pickupPoint: values.pickupPoint,
-        pickupLat: values.pickupLat,
-        pickupLng: values.pickupLng,
-        dropoffPoint: values.dropoffPoint || undefined,
-        dropoffLat: values.dropoffLat,
-        dropoffLng: values.dropoffLng,
+        pickupStops: values.pickupStops,
+        dropoffStops: values.dropoffStops,
+        pickupPoint: values.pickupPoint || firstPickup?.label,
+        pickupLat: values.pickupLat ?? firstPickup?.lat,
+        pickupLng: values.pickupLng ?? firstPickup?.lng,
+        dropoffPoint: values.dropoffPoint || lastDropoff?.label,
+        dropoffLat: values.dropoffLat ?? lastDropoff?.lat,
+        dropoffLng: values.dropoffLng ?? lastDropoff?.lng,
         departureAt: values.departureAt.toISOString(),
         availableSeats: values.availableSeats,
         pricePerSeat: values.pricePerSeat,

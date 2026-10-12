@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Linking, ScrollView, View } from 'react-native';
+import { Alert, Linking, ScrollView, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '../../../auth/auth-context';
@@ -10,32 +10,59 @@ import { TripInquiryFormSheet } from '../../../features/trips/components/TripInq
 import { AuthRequiredSheet } from '../../../components/auth/AuthRequiredSheet';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
 import { ReviewsList } from '../../../components/reviews/ReviewsList';
-import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, Row } from '../../../components/ui';
+import {
+  AppButton,
+  AppCard,
+  AppRefreshControl,
+  AppScreen,
+  AppText,
+  ErrorState,
+  LoadingState,
+  Row,
+  StatusBadge,
+} from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { formatPrice, titleCase } from '../../../utils/format';
 
 function formatDepartureDateTime(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, spacing } = useTheme();
   const { data: trip, isLoading, isError, refetch } = useTrip(id);
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [requestSheetVisible, setRequestSheetVisible] = useState(false);
   const [authPromptVisible, setAuthPromptVisible] = useState(false);
   const queryClient = useQueryClient();
+  const isTripOwner = Boolean(user && trip && user.id === trip.postedBy.id);
+
   // Reviews and rating badges on this screen are their own queries, owned by
   // child components — invalidating ['reviews'] refetches the mounted ones.
   const refresh = usePullToRefresh(() =>
-    Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['reviews'] })]),
+    Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: ['reviews'] }),
+    ]),
   );
 
   if (isLoading) return <LoadingState label="Loading trip..." />;
-  if (isError || !trip) return <ErrorState message="This trip may no longer be available." onRetry={refetch} />;
+  if (isError || !trip)
+    return (
+      <ErrorState
+        message="This trip may no longer be available."
+        onRetry={refetch}
+      />
+    );
 
   // Requesting a seat needs an account — ask a guest to sign in before they
   // fill out the form, not after the backend rejects the submit.
@@ -44,13 +71,25 @@ export default function TripDetailScreen() {
       setAuthPromptVisible(true);
       return;
     }
+    if (isTripOwner) {
+      Alert.alert(
+        'Your Trip',
+        'You cannot request a seat on a trip you created.',
+      );
+      return;
+    }
     setRequestSheetVisible(true);
   };
 
   return (
     <AppScreen edges={['left', 'right', 'bottom']}>
-      <Stack.Screen options={{ title: `${trip.originCity} → ${trip.destinationCity}` }} />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={<AppRefreshControl {...refresh} />}>
+      <Stack.Screen
+        options={{ title: `${trip.originCity} → ${trip.destinationCity}` }}
+      />
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg }}
+        refreshControl={<AppRefreshControl {...refresh} />}
+      >
         <AppText variant="title" style={{ textTransform: 'capitalize' }}>
           {trip.originCity} → {trip.destinationCity}
         </AppText>
@@ -58,7 +97,13 @@ export default function TripDetailScreen() {
           {formatDepartureDateTime(trip.departureAt)}
         </AppText>
 
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: spacing.md }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'baseline',
+            marginTop: spacing.md,
+          }}
+        >
           <AppText variant="title" color={colors.primary}>
             {formatPrice(trip.pricePerSeat)}
           </AppText>
@@ -66,18 +111,31 @@ export default function TripDetailScreen() {
         </View>
 
         {trip.userVehicle.images.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.lg }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: spacing.lg }}
+          >
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               {trip.userVehicle.images.map((image) => (
                 <View
                   key={image.id}
-                  style={{ width: 220, aspectRatio: 16 / 10, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.surfaceAlt }}
+                  style={{
+                    width: 220,
+                    aspectRatio: 16 / 10,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    backgroundColor: colors.surfaceAlt,
+                  }}
                 >
                   <Image
                     source={{ uri: image.url }}
                     style={{ width: '100%', height: '100%' }}
                     contentFit="cover"
-                    accessibilityLabel={image.altText ?? `${trip.userVehicle.make} ${trip.userVehicle.model}`}
+                    accessibilityLabel={
+                      image.altText ??
+                      `${trip.userVehicle.make} ${trip.userVehicle.model}`
+                    }
                   />
                 </View>
               ))}
@@ -86,28 +144,79 @@ export default function TripDetailScreen() {
         ) : null}
 
         <AppCard style={{ marginTop: spacing.lg }}>
-          <Row label="Pickup point" value={trip.pickupPoint} />
-          {trip.dropoffPoint ? <Row label="Drop-off point" value={trip.dropoffPoint} /> : null}
+          {trip.stops && trip.stops.filter((s) => s.type === 'PICKUP').length > 1 ? (
+            <Row
+              label="Pickup points"
+              value={trip.stops
+                .filter((s) => s.type === 'PICKUP')
+                .map((s, i) => `${i + 1}. ${s.label}`)
+                .join('\n')}
+            />
+          ) : (
+            <Row label="Pickup point" value={trip.pickupPoint} />
+          )}
+
+          {trip.stops && trip.stops.filter((s) => s.type === 'DROPOFF').length > 1 ? (
+            <Row
+              label="Drop-off points"
+              value={trip.stops
+                .filter((s) => s.type === 'DROPOFF')
+                .map((s, i) => `${i + 1}. ${s.label}`)
+                .join('\n')}
+            />
+          ) : trip.dropoffPoint ? (
+            <Row label="Drop-off point" value={trip.dropoffPoint} />
+          ) : null}
           <Row label="Available seats" value={String(trip.availableSeats)} />
         </AppCard>
 
         <AppCard style={{ marginTop: spacing.lg }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: spacing.sm,
+            }}
+          >
             <AppText variant="label">Vehicle</AppText>
-            <RatingSummaryBadge subjectType="USER_VEHICLE" subjectId={trip.userVehicle.id} size="sm" />
+            <RatingSummaryBadge
+              subjectType="USER_VEHICLE"
+              subjectId={trip.userVehicle.id}
+              size="sm"
+            />
           </View>
           <Row
             label="Vehicle"
             value={`${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}${trip.userVehicle.year ? ` (${trip.userVehicle.year})` : ''}`}
           />
-          {trip.userVehicle.color ? <Row label="Color" value={titleCase(trip.userVehicle.color)} /> : null}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xs }}>
+          {trip.userVehicle.color ? (
+            <Row label="Color" value={titleCase(trip.userVehicle.color)} />
+          ) : null}
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: spacing.xs,
+            }}
+          >
             <AppText muted variant="caption">
               Posted by
             </AppText>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.sm,
+              }}
+            >
               <AppText variant="caption">{trip.postedBy.name}</AppText>
-              <RatingSummaryBadge subjectType="USER" subjectId={trip.postedBy.id} size="sm" />
+              <RatingSummaryBadge
+                subjectType="USER"
+                subjectId={trip.postedBy.id}
+                size="sm"
+              />
             </View>
           </View>
         </AppCard>
@@ -122,24 +231,73 @@ export default function TripDetailScreen() {
         ) : null}
 
         <AppCard style={{ marginTop: spacing.lg }}>
-          <ReviewsList subjectType="USER" subjectId={trip.postedBy.id} title="Driver reviews" />
+          <ReviewsList
+            subjectType="USER"
+            subjectId={trip.postedBy.id}
+            title="Driver reviews"
+          />
         </AppCard>
 
-        {trip.availableSeats > 0 ? (
-          <AppButton title="Request seats" style={{ marginTop: spacing.xl }} onPress={handleRequestSeats} />
+        {isTripOwner ? (
+          <AppCard
+            style={{
+              marginTop: spacing.xl,
+              borderColor: colors.primary,
+              backgroundColor: colors.surfaceAlt,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.sm,
+                marginBottom: spacing.xs,
+              }}
+            >
+              <StatusBadge label="This is your trip" tone="info" />
+            </View>
+            <AppText
+              muted
+              variant="caption"
+              style={{ marginTop: spacing.xs, marginBottom: spacing.md }}
+            >
+              You created this ride. You can view its manifest and manage it
+              from My Trips.
+            </AppText>
+            <AppButton
+              title="Manage this trip"
+              variant="outline"
+              onPress={() => router.push(`/account/my-trips/${trip.id}`)}
+            />
+          </AppCard>
         ) : (
-          <AppButton title="Full — no seats left" variant="secondary" disabled style={{ marginTop: spacing.xl }} />
+          <>
+            {trip.availableSeats > 0 ? (
+              <AppButton
+                title="Request seats"
+                style={{ marginTop: spacing.xl }}
+                onPress={handleRequestSeats}
+              />
+            ) : (
+              <AppButton
+                title="Full — no seats left"
+                variant="secondary"
+                disabled
+                style={{ marginTop: spacing.xl }}
+              />
+            )}
+            <AppButton
+              title="Contact via WhatsApp"
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              onPress={() => {
+                // wa.me requires digits only — no leading '+', spaces, or dashes.
+                const number = trip.contactNumber.replace(/\D/g, '');
+                Linking.openURL(`https://wa.me/${number}`).catch(() => {});
+              }}
+            />
+          </>
         )}
-        <AppButton
-          title="Contact via WhatsApp"
-          variant="secondary"
-          style={{ marginTop: spacing.sm }}
-          onPress={() => {
-            // wa.me requires digits only — no leading '+', spaces, or dashes.
-            const number = trip.contactNumber.replace(/\D/g, '');
-            Linking.openURL(`https://wa.me/${number}`).catch(() => {});
-          }}
-        />
       </ScrollView>
 
       <TripInquiryFormSheet

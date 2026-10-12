@@ -228,6 +228,26 @@ export const userVehicleStatusMeta: Record<
   [UserVehicleStatus.SUSPENDED]: { label: 'Suspended', tone: 'danger' },
 };
 
+export const providerStatusMeta: Record<
+  ProviderStatus,
+  { label: string; tone: StatusTone }
+> = {
+  [ProviderStatus.PENDING]: { label: 'Pending', tone: 'warning' },
+  [ProviderStatus.PENDING_REVIEW]: { label: 'Under Review', tone: 'warning' },
+  [ProviderStatus.APPROVED]: { label: 'Approved', tone: 'success' },
+  [ProviderStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
+  [ProviderStatus.SUSPENDED]: { label: 'Suspended', tone: 'danger' },
+};
+
+export const documentStatusMeta: Record<
+  DocumentStatus,
+  { label: string; tone: StatusTone }
+> = {
+  [DocumentStatus.PENDING]: { label: 'Pending', tone: 'warning' },
+  [DocumentStatus.APPROVED]: { label: 'Approved', tone: 'success' },
+  [DocumentStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
+};
+
 // The statuses PATCH /my/vehicles/:id accepts (backend
 // OWNER_EDITABLE_USER_VEHICLE_STATUSES): a rejected vehicle is fixed and
 // resubmitted, a pending one corrected. APPROVED (what riders booked) and

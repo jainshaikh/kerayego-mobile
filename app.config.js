@@ -16,6 +16,7 @@ module.exports = {
     },
     android: {
       package: 'com.kerayego.app',
+      usesCleartextTraffic: true,
       googleServicesFile: './google-services.json',
       adaptiveIcon: {
         backgroundColor: '#FF4E64',

@@ -59,6 +59,7 @@ export function TripInquiryFormSheet({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedPickupStopId, setSelectedPickupStopId] = useState<string | null>(null);
   const [selectedDropoffStopId, setSelectedDropoffStopId] = useState<string | null>(null);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
   const {
     control,
@@ -79,6 +80,12 @@ export function TripInquiryFormSheet({
   const canSubmitStops = pickupStops.length > 0 && dropoffStops.length > 0;
   const stopsSelected = !!selectedPickupStopId && !!selectedDropoffStopId;
 
+  const handleClose = () => {
+    setHasAttemptedSubmit(false);
+    setSubmitError(null);
+    onClose();
+  };
+
   const onSubmit = async (values: TripInquiryFormValues) => {
     setSubmitError(null);
     if (!selectedPickupStopId || !selectedDropoffStopId) return;
@@ -95,6 +102,7 @@ export function TripInquiryFormSheet({
       reset({ requestedSeats: 1 });
       setSelectedPickupStopId(null);
       setSelectedDropoffStopId(null);
+      setHasAttemptedSubmit(false);
       onClose();
       router.push('/account/trip-requests');
     } catch (error) {
@@ -104,12 +112,28 @@ export function TripInquiryFormSheet({
         onAuthRequired();
         return;
       }
-      setSubmitError(normalized.message);
+      if (
+        normalized.message.toLowerCase().includes('own trip') ||
+        normalized.message.toLowerCase().includes('cannot book a seat') ||
+        normalized.message.toLowerCase().includes('cannot request a seat')
+      ) {
+        setSubmitError('You cannot request a seat on a trip you created.');
+      } else {
+        setSubmitError(normalized.message);
+      }
     }
   };
 
+  const handlePressSubmit = () => {
+    setHasAttemptedSubmit(true);
+    if (!selectedPickupStopId || !selectedDropoffStopId) {
+      return;
+    }
+    handleSubmit(onSubmit)();
+  };
+
   return (
-    <AppSheet visible={visible} onClose={onClose} title="Request seats" subtitle={routeLabel}>
+    <AppSheet visible={visible} onClose={handleClose} title="Request seats" subtitle={routeLabel}>
       <ScrollView keyboardShouldPersistTaps="handled">
         <AppText variant="label" style={{ marginBottom: spacing.xs }}>
           Seats needed
@@ -161,9 +185,14 @@ export function TripInquiryFormSheet({
         ) : null}
 
         <View style={{ marginBottom: spacing.md }}>
-          <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-            Pickup point
-          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
+            <AppText variant="label">
+              Pickup point
+            </AppText>
+            <AppText variant="label" color={colors.danger} style={{ marginLeft: 2 }}>
+              *
+            </AppText>
+          </View>
           {pickupStops.length > 0 ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
               {pickupStops.map((stop) => (
@@ -180,12 +209,22 @@ export function TripInquiryFormSheet({
               This trip has no valid pickup points — contact the driver.
             </AppText>
           )}
+          {hasAttemptedSubmit && !selectedPickupStopId && pickupStops.length > 0 ? (
+            <AppText color={colors.danger} variant="caption" style={{ marginTop: spacing.xs }}>
+              Pickup location is required
+            </AppText>
+          ) : null}
         </View>
 
         <View style={{ marginBottom: spacing.md }}>
-          <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-            Drop-off point
-          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
+            <AppText variant="label">
+              Drop-off point
+            </AppText>
+            <AppText variant="label" color={colors.danger} style={{ marginLeft: 2 }}>
+              *
+            </AppText>
+          </View>
           {dropoffStops.length > 0 ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
               {dropoffStops.map((stop) => (
@@ -202,6 +241,11 @@ export function TripInquiryFormSheet({
               This trip has no valid drop-off points — contact the driver.
             </AppText>
           )}
+          {hasAttemptedSubmit && !selectedDropoffStopId && dropoffStops.length > 0 ? (
+            <AppText color={colors.danger} variant="caption" style={{ marginTop: spacing.xs }}>
+              Dropoff location is required
+            </AppText>
+          ) : null}
         </View>
 
         <Controller
@@ -241,16 +285,22 @@ export function TripInquiryFormSheet({
         ) : null}
       </ScrollView>
 
+      {!stopsSelected && canSubmitStops ? (
+        <AppText muted variant="caption" style={{ textAlign: 'center', marginTop: spacing.xs }}>
+          Select pickup and dropoff to continue
+        </AppText>
+      ) : null}
+
       <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
         <View style={{ flex: 1 }}>
-          <AppButton title="Cancel" variant="secondary" onPress={onClose} />
+          <AppButton title="Cancel" variant="secondary" onPress={handleClose} />
         </View>
         <View style={{ flex: 2 }}>
           <AppButton
             title="Send request"
             loading={createInquiry.isPending}
-            disabled={!canSubmitStops || !stopsSelected}
-            onPress={handleSubmit(onSubmit)}
+            disabled={!canSubmitStops}
+            onPress={handlePressSubmit}
           />
         </View>
       </View>

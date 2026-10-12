@@ -71,11 +71,21 @@ export function normalizeApiError(error: unknown): NormalizedApiError {
     const kind = kindFromStatus(status);
     const body = error.response.data as ApiErrorBody | undefined;
     const backendMessage = body?.error?.message;
+    let message = backendMessage || FRIENDLY_MESSAGES[kind] || FRIENDLY_MESSAGES.unknown!;
+
+    if (Array.isArray(body?.error?.details) && body.error.details.length > 0) {
+      const detailsList = body.error.details
+        .map((d: unknown) => (typeof d === 'string' ? d : (d as { message?: string })?.message || JSON.stringify(d)))
+        .filter(Boolean);
+      if (detailsList.length > 0) {
+        message = detailsList.join('\n');
+      }
+    }
 
     return {
       kind,
       statusCode: status,
-      message: backendMessage || FRIENDLY_MESSAGES[kind] || FRIENDLY_MESSAGES.unknown!,
+      message,
       fieldErrors: body?.error?.details,
     };
   }

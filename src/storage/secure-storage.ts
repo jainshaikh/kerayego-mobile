@@ -12,7 +12,6 @@ import * as SecureStore from 'expo-secure-store';
 // without a token in between. Reads fall back to the old key until then.
 const REFRESH_TOKEN_KEY = 'auth.refreshToken.v2';
 const LEGACY_REFRESH_TOKEN_KEY = 'auth.refreshToken';
-const AUTH_USER_KEY = 'auth.user';
 
 // iOS: readable from the first unlock after a restart onwards, including
 // while the phone is locked — the driver's background location task
@@ -80,24 +79,6 @@ export async function clearRefreshToken(): Promise<void> {
   await Promise.all([deleteItem(REFRESH_TOKEN_KEY), deleteItem(LEGACY_REFRESH_TOKEN_KEY)]);
 }
 
-export async function getStoredAuthUser<T>(): Promise<T | null> {
-  const raw = await getItem(AUTH_USER_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-export async function setStoredAuthUser(user: unknown): Promise<void> {
-  await setItem(AUTH_USER_KEY, JSON.stringify(user));
-}
-
-export async function clearStoredAuthUser(): Promise<void> {
-  await deleteItem(AUTH_USER_KEY);
-}
-
 export async function clearAllAuthStorage(): Promise<void> {
-  await Promise.all([clearRefreshToken(), clearStoredAuthUser()]);
+  await clearRefreshToken();
 }
