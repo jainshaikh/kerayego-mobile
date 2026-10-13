@@ -9,7 +9,7 @@ module.exports = {
     userInterfaceStyle: 'automatic',
     ios: {
       bundleIdentifier: 'com.kerayego.app',
-      icon: './assets/expo.icon',
+      icon: './assets/images/icon.png',
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       },

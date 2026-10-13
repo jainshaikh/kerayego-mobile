@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type LatLng, type MapMarker, type Region } from 'react-native-maps';
 
 import { AppText } from '../../../components/ui';
@@ -188,10 +188,12 @@ export function LiveTripMap({ stops, driverPosition, isConnected, lastUpdateAt, 
       hasMountedDriverMarkerRef.current = true;
       return;
     }
-    driverMarkerRef.current?.animateMarkerToCoordinate(
-      { latitude: driverPosition.lat, longitude: driverPosition.lng },
-      DRIVER_MARKER_ANIMATION_MS,
-    );
+    if (Platform.OS === 'android') {
+      driverMarkerRef.current?.animateMarkerToCoordinate(
+        { latitude: driverPosition.lat, longitude: driverPosition.lng },
+        DRIVER_MARKER_ANIMATION_MS,
+      );
+    }
   }, [driverPosition]);
 
   const bannerText = !isConnected
@@ -312,10 +314,14 @@ export function LiveTripMap({ stops, driverPosition, isConnected, lastUpdateAt, 
           );
         })}
 
-        {driverPosition && initialDriverCoordinate ? (
+        {driverPosition ? (
           <Marker
             ref={driverMarkerRef}
-            coordinate={initialDriverCoordinate}
+            coordinate={
+              Platform.OS === 'android' && initialDriverCoordinate
+                ? initialDriverCoordinate
+                : { latitude: driverPosition.lat, longitude: driverPosition.lng }
+            }
             title="Driver"
             anchor={{ x: 0.5, y: 0.5 }}
             zIndex={10}
