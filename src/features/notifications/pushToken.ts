@@ -9,7 +9,6 @@ import { deviceTokensApi } from '../../api/device-tokens.api';
 export function configureNotificationHandler(): void {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
       shouldShowBanner: true,
       shouldShowList: true,
       shouldPlaySound: true,

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type LatLng, type MapMarker, type Region } from 'react-native-maps';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import MapView, {
+  Marker,
+  Polyline,
+  PROVIDER_GOOGLE,
+  type Details,
+  type LatLng,
+  type MapMarker,
+  type Region,
+} from 'react-native-maps';
 
 import { AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
@@ -48,6 +57,13 @@ export interface LiveTripMapProps {
   // driver marker is the viewer's own position, which needs no "you are
   // here" label), so it keeps rendering the plain dot exactly as before.
   driverLabel?: string;
+  // Additive, for the driver's leg-by-leg map only. When set, the camera
+  // frames these points (the driver and the stop they're heading to, or just
+  // the stop while they're at it) instead of every stop: re-framed whenever
+  // `key` changes, and — while `follow` is on — kept framed as they move,
+  // until the user pans the map themselves. A Re-center button then brings it
+  // back.
+  focus?: { points: { lat: number; lng: number }[]; key: string; follow: boolean };
 }
 
 // --- Numbered stop pins (design spec section 3, "Map") ------------------
@@ -95,6 +111,14 @@ const DEFAULT_REGION: Region = { latitude: 30.3753, longitude: 69.3451, latitude
 const FIT_EDGE_PADDING = { top: 80, right: 80, bottom: 80, left: 80 };
 // Matches the expected location.update ping cadence from the driver's GPS watch.
 const DRIVER_MARKER_ANIMATION_MS = 4000;
+// Focus mode: a single point (the stop the driver is at) is shown this close…
+const FOCUS_SINGLE_POINT_DELTA = 0.006;
+// …and following the driver re-frames at most this often, so the camera
+// eases along instead of jumping on every GPS fix.
+const FOCUS_FOLLOW_INTERVAL_MS = 8000;
+
+const pointsSignature = (points: { lat: number; lng: number }[]) =>
+  points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|');
 
 function regionFromStops(stops: LiveTripStop[]): Region | undefined {
   if (stops.length === 0) return undefined;
@@ -117,11 +141,79 @@ function regionFromStops(stops: LiveTripStop[]): Region | undefined {
   };
 }
 
-export function LiveTripMap({ stops, driverPosition, isConnected, lastUpdateAt, routePolyline, onSelectStop, driverLabel }: LiveTripMapProps) {
+export function LiveTripMap({
+  stops,
+  driverPosition,
+  isConnected,
+  lastUpdateAt,
+  routePolyline,
+  onSelectStop,
+  driverLabel,
+  focus,
+}: LiveTripMapProps) {
   const { colors, spacing, radii, shadows } = useTheme();
   const mapRef = useRef<MapView>(null);
   const driverMarkerRef = useRef<MapMarker>(null);
   const mapReadyRef = useRef(false);
+
+  // Focus mode: whether the user has panned away (pauses following), reset
+  // whenever the focus key changes — a new leg, or arriving at the stop.
+  const [userPanned, setUserPanned] = useState(false);
+  const [lastFocusKey, setLastFocusKey] = useState(focus?.key);
+  if (focus?.key !== lastFocusKey) {
+    setLastFocusKey(focus?.key);
+    setUserPanned(false);
+  }
+  const lastFollowFitAt = useRef(0);
+  const focusPoints = focus?.points;
+  const focusSignature = focusPoints ? pointsSignature(focusPoints) : '';
+
+  const fitToFocus = useCallback(() => {
+    if (!mapReadyRef.current || !focusPoints?.length) return;
+    lastFollowFitAt.current = Date.now();
+    if (focusPoints.length === 1) {
+      mapRef.current?.animateToRegion(
+        {
+          latitude: focusPoints[0].lat,
+          longitude: focusPoints[0].lng,
+          latitudeDelta: FOCUS_SINGLE_POINT_DELTA,
+          longitudeDelta: FOCUS_SINGLE_POINT_DELTA,
+        },
+        500,
+      );
+      return;
+    }
+    mapRef.current?.fitToCoordinates(
+      focusPoints.map((p) => ({ latitude: p.lat, longitude: p.lng })),
+      { edgePadding: FIT_EDGE_PADDING, animated: true },
+    );
+    // Keyed on the points' rounded signature rather than the array itself —
+    // a fresh array arrives with every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSignature]);
+
+  // A new focus (leg change, arrival): frame it straight away.
+  useEffect(() => {
+    if (focus) fitToFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.key]);
+
+  // Following: keep the driver and their target framed as they move, at most
+  // every FOCUS_FOLLOW_INTERVAL_MS, unless the user has panned away.
+  useEffect(() => {
+    if (!focus?.follow || userPanned) return;
+    if (Date.now() - lastFollowFitAt.current < FOCUS_FOLLOW_INTERVAL_MS) return;
+    fitToFocus();
+  }, [focus?.follow, userPanned, focusSignature, fitToFocus]);
+
+  const handleRegionChangeComplete = (_region: Region, details?: Details) => {
+    if (focus && details?.isGesture) setUserPanned(true);
+  };
+
+  const handleRecenter = () => {
+    setUserPanned(false);
+    fitToFocus();
+  };
 
   // The Marker's `coordinate` prop is set ONCE, to the first position we
   // ever see — every position after that moves the marker via the
@@ -144,17 +236,20 @@ export function LiveTripMap({ stops, driverPosition, isConnected, lastUpdateAt, 
   // Memoized on `stops` identity so the effect below only re-fits when the
   // set of stops actually changes, not on every unrelated re-render (e.g. a
   // driverPosition update).
+  // Not in focus mode — that frames its own points instead (see above).
+  const hasFocus = !!focus;
   const fitToStops = useCallback(() => {
-    if (!mapReadyRef.current || stops.length === 0) return;
+    if (!mapReadyRef.current || stops.length === 0 || hasFocus) return;
     mapRef.current?.fitToCoordinates(
       stops.map((s) => ({ latitude: s.lat, longitude: s.lng })),
       { edgePadding: FIT_EDGE_PADDING, animated: true },
     );
-  }, [stops]);
+  }, [stops, hasFocus]);
 
   const handleMapReady = () => {
     mapReadyRef.current = true;
-    fitToStops();
+    if (focus) fitToFocus();
+    else fitToStops();
   };
 
   useEffect(() => {
@@ -208,6 +303,7 @@ export function LiveTripMap({ stops, driverPosition, isConnected, lastUpdateAt, 
         style={StyleSheet.absoluteFill}
         initialRegion={regionFromStops(stops) ?? DEFAULT_REGION}
         onMapReady={handleMapReady}
+        onRegionChangeComplete={handleRegionChangeComplete}
       >
         {routePolyline && routePolyline.length > 1 ? (
           <Polyline
@@ -349,6 +445,29 @@ export function LiveTripMap({ stops, driverPosition, isConnected, lastUpdateAt, 
           </AppText>
         </View>
       ) : null}
+
+      {focus && userPanned ? (
+        <Pressable
+          onPress={handleRecenter}
+          accessibilityRole="button"
+          accessibilityLabel="Re-center the map"
+          style={({ pressed }) => [
+            styles.recenter,
+            {
+              right: spacing.md,
+              bottom: spacing.md,
+              borderRadius: radii.full,
+              backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
+              paddingHorizontal: spacing.md,
+              gap: spacing.xs,
+            },
+            shadows.sm,
+          ]}
+        >
+          <Ionicons name="locate" size={18} color={colors.text} />
+          <AppText variant="label">Re-center</AppText>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -380,5 +499,11 @@ const styles = StyleSheet.create({
     top: 12,
     left: 12,
     right: 12,
+  },
+  recenter: {
+    position: 'absolute',
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

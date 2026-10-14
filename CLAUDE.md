@@ -25,7 +25,9 @@ for spotty connectivity.
 
 Expo ~57.0.12 · Expo Router ~57.0.12 (file-based routing) · React 19.2.3 · React Native 0.86.2, New
 Architecture + Hermes enabled · TanStack React Query v5 · Axios · Zod v4 + React Hook Form ·
-`socket.io-client` 4.8.1 · `react-native-maps` · `expo-location` · `expo-notifications` ·
+`socket.io-client` 4.8.1 · `react-native-maps` · `react-native-keyboard-controller` (all keyboard
+avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help; see `docs/ARCHITECTURE.md`
+§8) · `expo-location` · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
 (present as dependencies; not used anywhere in the audited design-system/component files). **No test
 framework of any kind is installed** — no test script, no Jest/Detox/Maestro config, zero
@@ -42,7 +44,8 @@ src/
     liveRide/           socket.ts (shared Socket.IO client), LiveTripMap, ChatPanel, ChatModalSheet,
                         rideVisuals.ts, geo.ts, openMapsNavigation.ts, useTripRoomPresence.ts,
                         useBlockBackButtonWhileActive.ts (shared driver+rider live-ride pieces)
-    location/           LocationField, LocationMapSheet, activeAutocomplete.ts
+    location/           LocationField, LocationMapSheet (centre-pin map picker), usePlaceSearch.ts,
+                        activeAutocomplete.ts
     trips/              offlineSync.ts (offline action queue + shared runTripAction) + trip components;
                         driverCockpit/ (driver day-of-execution hooks/components, see docs/ARCHITECTURE.md §10.1)
     notifications/      pushToken.ts

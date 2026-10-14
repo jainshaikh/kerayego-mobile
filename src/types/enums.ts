@@ -105,6 +105,7 @@ export enum TripEventType {
   NO_SHOW = 'NO_SHOW',
   DROPOFF = 'DROPOFF',
   END = 'END',
+  DEPARTED = 'DEPARTED', // driver's "Start next leg" at a stop
 }
 
 export enum PickupSource {

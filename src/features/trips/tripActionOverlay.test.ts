@@ -40,8 +40,23 @@ describe('deriveTripActionOverlay', () => {
       riderEvents: {},
       noShowIds: new Set(),
       arrivedStopIds: new Set(),
+      departedStopIds: new Set(),
       arrivedInquiryIds: new Set(),
     });
+  });
+
+  it("records the stop the driver left with Start next leg", () => {
+    const departed: TripActionDraft = {
+      id: 'l1',
+      kind: 'event',
+      tripId: TRIP,
+      createdAt: at(20),
+      payload: { id: 'l1', type: TripEventType.DEPARTED, occurredAt: at(20), payload: { stopId: 'stop-1' } },
+    };
+
+    const overlay = deriveTripActionOverlay([driverArrived('a1', 'stop-1', 4), departed]);
+    expect(overlay.arrivedStopIds).toEqual(new Set(['stop-1']));
+    expect(overlay.departedStopIds).toEqual(new Set(['stop-1']));
   });
 
   it('marks the trip started and ended', () => {

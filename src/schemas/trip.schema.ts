@@ -45,8 +45,14 @@ export const tripFormSchema = z.object({
     .refine((d) => d > new Date(), {
       message: 'Departure must be in the future',
     }),
-  availableSeats: z.number().int().min(1).max(20),
-  pricePerSeat: z.number().min(1, 'Price per seat must be at least 1'),
+  // An emptied field holds null (see utils/numberInput.ts), hence the
+  // invalid-type message. Limits mirror CreateTripDto.
+  availableSeats: z
+    .number({ message: 'Enter how many seats you can offer' })
+    .int()
+    .min(1, 'Offer at least 1 seat')
+    .max(20, 'You can offer at most 20 seats'),
+  pricePerSeat: z.number({ message: 'Enter a price per seat' }).min(1, 'Price per seat must be at least 1'),
   contactNumber: z
     .string()
     .min(1, 'Contact number is required')

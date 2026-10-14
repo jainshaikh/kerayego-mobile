@@ -18,6 +18,7 @@ const EVENT_LABELS: Record<TripEventType, string> = {
   [TripEventType.NO_SHOW]: 'No-show',
   [TripEventType.DROPOFF]: 'Drop-off',
   [TripEventType.END]: 'End ride',
+  [TripEventType.DEPARTED]: 'Start next leg',
 };
 
 function actionLabel(entry: DroppedTripAction): string {

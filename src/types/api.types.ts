@@ -485,6 +485,8 @@ export interface TripDetail extends Omit<TripCard, 'userVehicle'> {
     color: string | null;
     plateNumber: string;
     status: UserVehicleStatus;
+    // The market the trip's prices are in (see currencyForMarket).
+    country?: Market;
     images: UserVehicleImage[];
   };
 }

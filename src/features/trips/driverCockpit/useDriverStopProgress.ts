@@ -1,21 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import { geoApi, type RouteDirections } from '../../../api/geo.api';
-import type { ManifestRouteStop, TripManifest } from '../../../api/trips.api';
+import type { TripManifest } from '../../../api/trips.api';
 import { haversineDistanceMeters } from '../../liveRide/geo';
 import type { RiderEventOverlay } from '../tripActionOverlay';
+import { deriveLegState, type LegState } from './legState';
 import { serverClockFrom, type ServerClock } from './noShow';
 import {
-  findNextStop,
   mergeArrivedStopIds,
   mergeCockpitRiders,
+  mergeDepartedStopIds,
   resolveStops,
   type CockpitRider,
-  type StopResolution,
 } from './stopProgress';
 
 // Driver must be within this many meters of a stop to confirm arrival there.
-// Exported so DriverLiveCockpit's "Get within Nm…" disabled-reason copy can
-// name the same radius this hook gates canConfirmArrival on.
+// Exported so the leg panel's "Get within Nm…" disabled-reason copy can name
+// the same radius this hook gates canConfirmArrival on.
 export const ARRIVAL_RADIUS_METERS = 100;
 
 interface UseDriverStopProgressParams {
@@ -27,32 +25,28 @@ interface UseDriverStopProgressParams {
   optimisticEvents: Record<string, RiderEventOverlay>;
   noShowIds: ReadonlySet<string>;
   arrivedStopIds: ReadonlySet<string>;
+  departedStopIds: ReadonlySet<string>;
   currentPosition: { lat: number; lng: number } | null;
-  active: boolean;
 }
 
 export interface DriverStopProgress {
   mergedRiders: CockpitRider[];
-  stopResolutions: StopResolution[];
-  nextStop: ManifestRouteStop | null;
-  nextStopDistanceM: number | null;
+  // Which stop the driver is on and what they're doing there — see legState.ts.
+  leg: LegState;
+  // Straight-line distance to the current stop — null without a GPS fix or a current stop.
+  currentStopDistanceM: number | null;
+  // Navigating, and close enough to the current stop to mark arriving there.
   canConfirmArrival: boolean;
   // Stops the driver has reached — per the server, or tapped on this device.
   arrivedStopIds: Set<string>;
   // null on an older backend (no serverNow) — no-show and wait timing then stay hidden.
   serverClock: ServerClock | null;
-  selectedStopId: string | null;
-  setSelectedStopId: (id: string) => void;
-  previewStop: ManifestRouteStop | null;
-  routeDirections: RouteDirections | null;
 }
 
 /**
- * Derives the driver's stop-by-stop progress from the manifest (merged with
- * any not-yet-synced pickup/dropoff/no-show/arrival taps), tracks which stop is
- * currently previewed on the map, and fetches turn-by-turn directions for the
- * previewed stop's leg. This is the state machine behind my-trips/[id].tsx's
- * Stops/Riders tabs and map overlay.
+ * Derives the driver's leg-by-leg progress from the manifest, merged with any
+ * not-yet-synced pickup/dropoff/no-show/arrival/departure taps — the state
+ * machine behind my-trips/[id].tsx's map and leg panel.
  */
 export function useDriverStopProgress({
   manifest,
@@ -60,163 +54,38 @@ export function useDriverStopProgress({
   optimisticEvents,
   noShowIds,
   arrivedStopIds,
+  departedStopIds,
   currentPosition,
-  active,
 }: UseDriverStopProgressParams): DriverStopProgress {
-  // Which stop's route is currently PREVIEWED on the map — defaults to (and
-  // auto-follows) nextStop, but the driver can tap a different stop's card in
-  // the Stops tab (or a pin on the map) to preview the route there instead.
-  // This is a purely visual/non-destructive preview: it drives ONLY the map
-  // polyline/next-stop-banner below, never which stop an "Arrived" tap
-  // confirms — that always stays tied to nextStop itself.
-  const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
-  // The nextStop id selectedStopId was last auto-synced against — see the
-  // render-time sync below for how this drives "auto-track nextStop by default".
-  const [syncedNextStopId, setSyncedNextStopId] = useState<string | null>(null);
-  // Turn-by-turn overlay (polyline + distance/duration) for the current
-  // PREVIEWED stop's leg — see the fetch effect below for when it's populated.
-  const [routeDirections, setRouteDirections] = useState<RouteDirections | null>(null);
-  // Which stop id directions have already been fetched for — guards the
-  // effect below so the endpoint is called once per distinct previewed stop,
-  // never on a timer or on every GPS tick.
-  const fetchedRouteForStopId = useRef<string | null>(null);
-  // Mirror the latest previewed stop and currentPosition for the fetch effect
-  // below to read without listing them as dependencies — both are new object
-  // references on every render (previewStop is recomputed below,
-  // currentPosition ticks every ~4s from the GPS watch), so depending on them
-  // directly would re-run the fetch far more often than "the previewed stop
-  // actually changed", racing a still-in-flight fetch against its own
-  // cancellation.
-  const previewStopRef = useRef<ManifestRouteStop | null>(null);
-  const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
-
-  // Riders with the driver's not-yet-reflected taps merged in, grouped by
-  // manifest.routeStops (pickup stops first, then dropoff stops, per the
-  // backend's visit order). A rider whose pickupStop/dropoffStop is null
-  // (legacy data) — or who otherwise doesn't match any current stop — simply
-  // isn't grouped under a stop; it never disappears from mergedRiders.
+  // Riders with the driver's not-yet-reflected taps merged in. A rider whose
+  // pickupStop/dropoffStop is null (legacy data) — or who otherwise doesn't
+  // match any current stop — simply isn't grouped under a stop; it never
+  // disappears from mergedRiders.
   const mergedRiders = mergeCockpitRiders(manifest?.riders ?? [], { riderEvents: optimisticEvents, noShowIds });
   const routeStops = manifest?.routeStops ?? [];
 
-  // Per-stop "is every rider at this stop done" — shared by the map's
-  // numbered pins and the Stops tab's sequence dot/badge. A no-show counts as
-  // done at both their pickup and their drop-off stop (see isRiderDoneAtStop).
-  const stopResolutions = resolveStops(routeStops, mergedRiders);
-
-  // First stop (in visit order) that still has unfinished business: a PICKUP
-  // stop with a rider still to be picked up, or a DROPOFF stop with a rider
-  // still to be dropped off.
-  const nextStop = findNextStop(stopResolutions);
-
-  const nextStopDistanceM =
-    nextStop && currentPosition ? haversineDistanceMeters(currentPosition, { lat: nextStop.lat, lng: nextStop.lng }) : null;
-  const canConfirmArrival = nextStopDistanceM !== null && nextStopDistanceM <= ARRIVAL_RADIUS_METERS;
-
-  // The server's arrivals survive a remount/app restart; the overlay's cover
-  // a Reached still queued offline or just sent.
+  // The server's arrivals/departures survive a remount/app restart; the
+  // overlay's cover a tap still queued offline or just sent.
   const mergedArrivedStopIds = mergeArrivedStopIds(routeStops, arrivedStopIds);
-  const serverClock = serverClockFrom(manifest?.serverNow, manifestReceivedAt);
+  const leg = deriveLegState(
+    resolveStops(routeStops, mergedRiders),
+    mergedArrivedStopIds,
+    mergeDepartedStopIds(routeStops, departedStopIds),
+  );
 
-  // The stop selectedStopId currently resolves to (or null before the first
-  // sync below, or if it somehow names a stop no longer in this manifest).
-  // stopResolutions covers every routeStop unconditionally, so this lookup
-  // doesn't miss stops that happen to have no riders on them.
-  const previewStop: ManifestRouteStop | null =
-    stopResolutions.find((resolution) => resolution.stop.id === selectedStopId)?.stop ?? null;
-
-  // Keeps selectedStopId auto-tracking nextStop by default. Whenever nextStop
-  // changes: an unset selection snaps to it immediately; an existing
-  // selection that has fallen BEHIND the new nextStop in visit order (i.e. it
-  // names a stop that's now fully resolved/in the past) is treated as stale
-  // and snapped forward too. A selection that is still at-or-ahead of
-  // nextStop — the driver deliberately previewing a later stop — is left
-  // alone; that's the override this exists to support.
-  //
-  // Done as a direct render-time comparison (React's documented "adjusting
-  // state when a prop changes" pattern — comparing against a stored previous
-  // value and calling setState immediately, guarded so it settles in one
-  // extra render) rather than inside a useEffect: a synchronous setState in
-  // an effect body trips this project's react-hooks/set-state-in-effect lint
-  // rule. LiveTripMap's initialDriverCoordinate uses this same during-render
-  // pattern for the same reason.
-  if ((nextStop?.id ?? null) !== syncedNextStopId) {
-    setSyncedNextStopId(nextStop?.id ?? null);
-    if (nextStop) {
-      const targetId = nextStop.id;
-      const stopOrder = routeStops;
-      setSelectedStopId((prev) => {
-        if (!prev) return targetId;
-        const prevIndex = stopOrder.findIndex((s) => s.id === prev);
-        const nextIndex = stopOrder.findIndex((s) => s.id === targetId);
-        return prevIndex === -1 || prevIndex < nextIndex ? targetId : prev;
-      });
-    }
-  }
-
-  // `previewStop`/`currentPosition` are read at fetch time via these refs
-  // rather than as effect dependencies — kept current via their own
-  // no-dependency-array effect (runs after every render, before the fetch
-  // effect below since it's declared first) rather than writing the refs
-  // directly in the render body — required by this app's React Compiler
-  // lint rule (react-hooks/refs).
-  useEffect(() => {
-    previewStopRef.current = previewStop;
-    currentPositionRef.current = currentPosition;
-  });
-
-  // Route polyline + distance/duration for the map overlay, for the leg from
-  // the driver's current position to whichever stop is currently PREVIEWED
-  // (selectedStopId/previewStop — defaults to, and normally tracks, nextStop,
-  // but the driver can preview a different stop from the Stops tab or map).
-  // Depends only on `active`, selectedStopId (already a stable primitive —
-  // no ref indirection needed for the dependency itself, only for reading the
-  // resolved stop object at fetch time), and whether a GPS fix exists YET (a
-  // boolean, not the position itself) — so this only re-runs when the
-  // previewed stop genuinely changes, or once when the very first fix
-  // arrives, never on every subsequent GPS tick. `fetchedRouteForStopId`
-  // additionally guards against firing twice for the same stop id. A failed
-  // call or a "no route" response just clears the overlay — this is a
-  // nice-to-have, never something that blocks the Arrived/Pickup/Dropoff flow.
-  useEffect(() => {
-    const stop = previewStopRef.current;
-    if (!active || !stop) return;
-    if (fetchedRouteForStopId.current === stop.id) return;
-    const position = currentPositionRef.current;
-    if (!position) return; // no fix yet — retried once `!!currentPosition` flips true below
-
-    fetchedRouteForStopId.current = stop.id;
-    // Clear the previous stop's directions immediately so a stale
-    // distance/duration/polyline never lingers on screen while the new leg
-    // is fetched.
-    setRouteDirections(null);
-
-    let cancelled = false;
-    geoApi
-      .getRouteDirections({ lat: position.lat, lng: position.lng }, { lat: stop.lat, lng: stop.lng })
-      .then((directions) => {
-        if (!cancelled) setRouteDirections(directions);
-      })
-      .catch(() => {
-        if (!cancelled) setRouteDirections(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, selectedStopId, !!currentPosition]);
+  const currentStop = leg.current?.stop ?? null;
+  const currentStopDistanceM =
+    currentStop && currentPosition
+      ? haversineDistanceMeters(currentPosition, { lat: currentStop.lat, lng: currentStop.lng })
+      : null;
 
   return {
     mergedRiders,
-    stopResolutions,
-    nextStop,
-    nextStopDistanceM,
-    canConfirmArrival,
+    leg,
+    currentStopDistanceM,
+    canConfirmArrival:
+      leg.phase === 'navigating' && currentStopDistanceM !== null && currentStopDistanceM <= ARRIVAL_RADIUS_METERS,
     arrivedStopIds: mergedArrivedStopIds,
-    serverClock,
-    selectedStopId,
-    setSelectedStopId,
-    previewStop,
-    routeDirections,
+    serverClock: serverClockFrom(manifest?.serverNow, manifestReceivedAt),
   };
 }

@@ -12,9 +12,10 @@ interface DetailsTabProps {
   riders: CockpitRider[];
 }
 
-// Details tab (design spec §4.3) — exactly three text-only Cards, computed
-// from data already on the manifest/trip; distance is intentionally omitted
-// (TripDetail has no real distance field to report here).
+// The cockpit's Details sheet (design spec §4.3) — exactly three text-only
+// Cards, computed from data already on the manifest/trip; distance is
+// intentionally omitted (TripDetail has no real distance field to report
+// here). The sheet supplies the side padding.
 export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
   const { colors, spacing } = useTheme();
 
@@ -33,7 +34,7 @@ export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
   const startedLabel = formatDate(trip.departureAt);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+    <ScrollView contentContainerStyle={{ paddingBottom: spacing.xs }}>
       <View style={{ gap: spacing.md }}>
         <AppCard>
           <AppText variant="label" style={{ marginBottom: spacing.md }}>

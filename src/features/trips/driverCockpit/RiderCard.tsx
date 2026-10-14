@@ -1,4 +1,4 @@
-import { View } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { AppButton, AppCard, AppText, StatusBadge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { useNow } from '../../../hooks/useNow';
@@ -24,12 +24,15 @@ interface NoShowControlProps {
   visible: boolean;
   pending: boolean;
   onPress: () => void;
+  // Replaces the default top margin, e.g. to sit beside another button.
+  style?: StyleProp<ViewStyle>;
 }
 
-// "Didn't show" — only once the driver's Reached at this rider's pickup stop
+// "Didn't show" — only once the driver's arrival at this rider's pickup stop
 // is on the server, disabled with a countdown until the five-minute wait is
 // over. Its own component so the once-a-second tick re-renders just this.
-function NoShowControl({ rider, context, visible, pending, onPress }: NoShowControlProps) {
+// Also used by the leg panel's rider checklist at a pickup stop.
+export function NoShowControl({ rider, context, visible, pending, onPress, style }: NoShowControlProps) {
   const { spacing } = useTheme();
   const gate = noShowGate(rider, context);
   const now = useNow(visible && gate.state === 'timed');
@@ -37,16 +40,18 @@ function NoShowControl({ rider, context, visible, pending, onPress }: NoShowCont
   if (gate.state === 'hidden') return null;
   if (gate.state === 'arrivalUnsynced') {
     return (
-      <AppText muted variant="caption" style={{ marginTop: spacing.sm }}>
-        You can mark a no-show {NO_SHOW_MIN_WAIT_MINUTES} min after your arrival here syncs.
-      </AppText>
+      <View style={style ?? { marginTop: spacing.sm }}>
+        <AppText muted variant="caption">
+          You can mark a no-show {NO_SHOW_MIN_WAIT_MINUTES} min after your arrival here syncs.
+        </AppText>
+      </View>
     );
   }
 
   const remainingMs = noShowRemainingMs(gate.arrivedAtMs, gate.clock, now);
   const waiting = remainingMs > 0;
   return (
-    <View style={{ marginTop: spacing.sm }}>
+    <View style={style ?? { marginTop: spacing.sm }}>
       <AppButton
         title={waiting ? `No-show in ${formatCountdown(remainingMs)}` : "Didn't show"}
         variant="outline"

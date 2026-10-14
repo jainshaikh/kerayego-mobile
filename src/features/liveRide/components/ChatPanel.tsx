@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from 'react-native';
+import { ActivityIndicator, FlatList, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import * as Crypto from 'expo-crypto';
 
 import { AppButton, AppInput, AppText } from '../../../components/ui';
@@ -292,7 +293,10 @@ export function ChatPanel({ active, tripInquiryId, otherPartyName }: ChatPanelPr
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    // Lives inside a fixed-height sheet (ChatModalSheet), which doesn't move
+    // for the keyboard — so this lifts the composer itself. automaticOffset
+    // measures where the sheet actually sits on screen.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" automaticOffset>
       <View style={{ flex: 1, backgroundColor: colors.background, padding: spacing.lg }}>
         <View style={{ marginBottom: spacing.xs }}>
           <AppText variant="subtitle" numberOfLines={1}>

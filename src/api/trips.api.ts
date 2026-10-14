@@ -82,12 +82,19 @@ export interface ManifestRouteStop {
   // The SERVER time of the driver's first ARRIVED at this stop, null until
   // then. Absent from an older backend.
   arrivedAt?: string | null;
+  // When the driver left this stop ("Start next leg" — a DEPARTED event),
+  // null until then. Absent from an older backend.
+  departedAt?: string | null;
 }
 
 export interface TripManifest {
   trip: TripDetail;
   riders: ManifestRider[];
   routeStops: ManifestRouteStop[];
+  // The stop the driver is heading to or standing at, per the server — the
+  // cockpit derives its own (legState.ts) so it keeps up with taps still
+  // queued offline. Null once every stop is behind; absent from an older backend.
+  currentStopId?: string | null;
   // The server's clock when it built this response, so waiting time at a
   // stop (serverNow - arrivedAt) never depends on the phone's own clock.
   // Absent from an older backend — which also has no no-show rules.

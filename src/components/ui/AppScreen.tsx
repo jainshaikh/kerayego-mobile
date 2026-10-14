@@ -1,18 +1,14 @@
 import type { ReactElement } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-  type RefreshControlProps,
-  type ViewProps,
-} from 'react-native';
+import { ScrollView, StyleSheet, View, type RefreshControlProps, type ViewProps } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
+import { FormScrollView } from './FormScrollView';
 
 interface AppScreenProps extends ViewProps {
   scroll?: boolean;
+  // For screens with text inputs: a scroll screen scrolls the focused input
+  // above the keyboard (FormScrollView); a fixed one shrinks to clear it.
   keyboardAvoiding?: boolean;
   edges?: Edge[];
   contentContainerStyle?: object;
@@ -32,24 +28,29 @@ export function AppScreen({
 }: AppScreenProps) {
   const { colors } = useTheme();
 
-  const content = scroll ? (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
-      refreshControl={refreshControl}
-    >
+  const body = scroll ? (
+    keyboardAvoiding ? (
+      <FormScrollView
+        contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+        refreshControl={refreshControl}
+      >
+        {children}
+      </FormScrollView>
+    ) : (
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+        refreshControl={refreshControl}
+      >
+        {children}
+      </ScrollView>
+    )
+  ) : keyboardAvoiding ? (
+    <KeyboardAvoidingView behavior="padding" automaticOffset style={[styles.flex, contentContainerStyle]}>
       {children}
-    </ScrollView>
-  ) : (
-    <View style={[styles.flex, contentContainerStyle]}>{children}</View>
-  );
-
-  const body = keyboardAvoiding ? (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-      {content}
     </KeyboardAvoidingView>
   ) : (
-    content
+    <View style={[styles.flex, contentContainerStyle]}>{children}</View>
   );
 
   return (
