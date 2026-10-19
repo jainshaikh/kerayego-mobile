@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import MapView, {
   Marker,
@@ -189,11 +189,6 @@ export function LiveTripMap({
   // Focus mode: whether the user has panned away (pauses following), reset
   // whenever the focus key changes — a new leg, or arriving at the stop.
   const [userPanned, setUserPanned] = useState(false);
-  const [lastFocusKey, setLastFocusKey] = useState(focus?.key);
-  if (focus?.key !== lastFocusKey) {
-    setLastFocusKey(focus?.key);
-    setUserPanned(false);
-  }
   const lastFollowFitAt = useRef(0);
   const focusPoints = focus?.points;
   const focusSignature = focusPoints ? pointsSignature(focusPoints) : "";
@@ -222,9 +217,12 @@ export function LiveTripMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignature]);
 
-  // A new focus (leg change, arrival): frame it straight away.
+  // A new focus (leg change, arrival): frame it straight away and reset user pan.
   useEffect(() => {
-    if (focus) fitToFocus();
+    if (focus) {
+      setUserPanned(false);
+      fitToFocus();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.key]);
 
@@ -290,14 +288,14 @@ export function LiveTripMap({
   // First fix ever received: adjust state during render (React's documented
   // pattern for deriving state from a prop change — see "storing information
   // from previous renders") so the Marker mounts already at the right spot.
-  // Deliberately not inside an effect: that would add an extra render+commit
-  // round trip just to set state we already know synchronously.
-  if (driverPosition && !initialDriverCoordinate) {
-    setInitialDriverCoordinate({
-      latitude: driverPosition.lat,
-      longitude: driverPosition.lng,
-    });
-  }
+  useEffect(() => {
+    if (driverPosition && !initialDriverCoordinate) {
+      setInitialDriverCoordinate({
+        latitude: driverPosition.lat,
+        longitude: driverPosition.lng,
+      });
+    }
+  }, [driverPosition, initialDriverCoordinate]);
 
   useEffect(() => {
     if (!driverPosition) {
