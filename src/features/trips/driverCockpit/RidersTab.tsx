@@ -18,7 +18,9 @@ interface RidersTabProps {
   onChat: (riderId: string, riderName: string) => void;
 }
 
-// Riders tab (design spec §4.2): one Card per rider.
+// The cockpit's Riders sheet (design spec §4.2): one Card per rider — every
+// rider at once, for actions out of route order (e.g. an early drop-off).
+// The sheet supplies the side padding.
 export function RidersTab({
   loading,
   riders,
@@ -33,7 +35,7 @@ export function RidersTab({
   const { spacing } = useTheme();
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+    <ScrollView contentContainerStyle={{ paddingBottom: spacing.xs }}>
       {loading ? (
         <AppText muted variant="caption">
           Loading…

@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react';
 import { ScrollView, View, type RefreshControlProps } from 'react-native';
 import { Image } from 'expo-image';
 
-import { AppButton, AppCard, AppInput, AppText, Row, StatusBadge } from '../../../components/ui';
+import { AppButton, AppCard, AppInput, AppText, FormScrollView, Row, StatusBadge } from '../../../components/ui';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
 import { useTheme } from '../../../theme';
 import type { TripDetail } from '../../../types/api.types';
@@ -49,7 +49,8 @@ export function DriverPostedTripView({
   const posterActions = effectiveCompleted ? [] : effectiveInProgress ? ['end' as const] : tripPosterActions(trip.status);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={refreshControl}>
+    // A form scroll view for the decline-note input in the requests inbox.
+    <FormScrollView contentContainerStyle={{ padding: spacing.lg }} refreshControl={refreshControl}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <AppText variant="title" style={{ textTransform: 'capitalize', flex: 1, marginRight: spacing.md }}>
           {trip.originCity} → {trip.destinationCity}
@@ -245,6 +246,6 @@ export function DriverPostedTripView({
           style={{ marginTop: spacing.md }}
         />
       ) : null}
-    </ScrollView>
+    </FormScrollView>
   );
 }

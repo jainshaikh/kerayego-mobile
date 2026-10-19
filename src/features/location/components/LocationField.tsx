@@ -1,11 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import * as Crypto from 'expo-crypto';
 
-import { AppButton, AppInput, AppText } from '../../../components/ui';
+import { AppButton, AppInput, AppText, useKeyboardSpaceBelow } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import { geoApi, type PlaceSuggestion } from '../../../api/geo.api';
+import type { PlaceSuggestion } from '../../../api/geo.api';
 import { setActiveAutocomplete, subscribeActiveAutocomplete } from '../activeAutocomplete';
+import { usePlaceSearch } from '../usePlaceSearch';
 import { LocationMapSheet } from './LocationMapSheet';
 
 interface LocationFieldProps {
@@ -22,12 +22,13 @@ interface LocationFieldProps {
   regionCodes?: string[];
   /** Hide the "Choose on map" pin-drop button — e.g. a plain location search filter has no map to drop a pin on. Defaults to true. */
   showMapPicker?: boolean;
+  /** Title of the map picker sheet, e.g. "Set pickup point". Defaults to "Choose on map". */
+  mapTitle?: string;
 }
 
-const DEBOUNCE_MS = 300;
-
 // Address input with Places-autocomplete suggestions, plus a "Choose on map"
-// button that opens a bottom-sheet map picker (tap/drag pin + current location).
+// button that opens a bottom-sheet map picker (search, center pin, zoom and
+// current-location controls).
 // Suggestions render directly in the component tree beneath the input rather
 // than in a native Modal — on Android, a Modal steals window focus and immediately
 // blurs the TextInput and dismisses the keyboard. An in-tree dropdown keeps focus
@@ -44,47 +45,31 @@ export function LocationField({
   error,
   regionCodes,
   showMapPicker = true,
+  mapTitle,
 }: LocationFieldProps) {
   const { colors, spacing, radii } = useTheme();
   const instanceId = useId();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const sessionTokenRef = useRef<string>(Crypto.randomUUID());
+  const { suggestions, search, resolve } = usePlaceSearch(regionCodes);
 
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [mapSheetVisible, setMapSheetVisible] = useState(false);
+  const [dropdownHeight, setDropdownHeight] = useState(0);
+
+  const showSuggestions = open && suggestions.length > 0;
+  // In a FormScrollView, scrolls far enough that the dropdown — not just the
+  // input — clears the keyboard.
+  useKeyboardSpaceBelow(showSuggestions ? dropdownHeight + spacing.sm : 0);
 
   useEffect(() => subscribeActiveAutocomplete((activeId) => {
     if (activeId !== instanceId) setOpen(false);
   }), [instanceId]);
 
-  useEffect(() => () => clearTimeout(debounceRef.current), []);
-
-  const fetchSuggestions = (text: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (!text.trim()) {
-      setSuggestions([]);
-      setOpen(false);
-      return;
-    }
-
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const results = await geoApi.autocompletePlaces(text, regionCodes, sessionTokenRef.current);
-        setSuggestions(results);
-        setOpen(results.length > 0);
-        if (results.length > 0) setActiveAutocomplete(instanceId);
-      } catch {
-        setSuggestions([]);
-        setOpen(false);
-      }
-    }, DEBOUNCE_MS);
-  };
-
   const handleChangeText = (text: string) => {
     onChangeText(text);
-    fetchSuggestions(text);
+    search(text, (results) => {
+      setOpen(results.length > 0);
+      if (results.length > 0) setActiveAutocomplete(instanceId);
+    });
   };
 
   const handleFocus = () => {
@@ -96,16 +81,12 @@ export function LocationField({
     setOpen(false);
     setActiveAutocomplete(null);
     try {
-      const details = await geoApi.getPlaceDetails(suggestion.placeId, sessionTokenRef.current);
+      const details = await resolve(suggestion);
       onChangeText(details.formattedAddress || suggestion.text);
       onLocationChange(details.lat, details.lng);
     } catch {
       // Fall back to the plain suggestion text — coordinates just won't be set.
       onChangeText(suggestion.text);
-    } finally {
-      // A session ends once a place's details are fetched — start a fresh
-      // one for the next search rather than reusing a spent token.
-      sessionTokenRef.current = Crypto.randomUUID();
     }
   };
 
@@ -121,8 +102,9 @@ export function LocationField({
         autoCorrect={false}
       />
 
-      {open && suggestions.length > 0 ? (
+      {showSuggestions ? (
         <View
+          onLayout={(e) => setDropdownHeight(e.nativeEvent.layout.height)}
           style={{
             backgroundColor: colors.surface,
             borderRadius: radii.md,
@@ -190,10 +172,13 @@ export function LocationField({
       ) : null}
 
       <LocationMapSheet
+        title={mapTitle}
         visible={mapSheetVisible}
         onClose={() => setMapSheetVisible(false)}
         initialLat={lat}
         initialLng={lng}
+        initialAddress={value}
+        regionCodes={regionCodes}
         onConfirm={(result) => {
           if (result.address) onChangeText(result.address);
           onLocationChange(result.lat, result.lng);

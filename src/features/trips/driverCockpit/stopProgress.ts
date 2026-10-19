@@ -12,9 +12,8 @@ export interface CockpitRider extends ManifestRider {
 export interface StopResolution {
   stop: ManifestRouteStop;
   riders: CockpitRider[];
+  // Every rider this stop serves needs nothing more there (see isRiderDoneAtStop).
   resolved: boolean;
-  // A drop-off stop whose riders were all no-shows: nobody to drop off there.
-  skipped: boolean;
 }
 
 interface RiderOverlay {
@@ -49,8 +48,8 @@ export function mergeCockpitRiders(riders: readonly ManifestRider[], overlay: Ri
  * Whether `rider` needs nothing more at a stop of `stopType`. A no-show needs
  * nothing at either of their stops, and a rider who is already dropped off
  * (e.g. self-reported without a pickup tap) can't be picked up any more —
- * otherwise either would hold their stop as "next" forever, freezing every
- * later stop's Reached button.
+ * otherwise either would hold their stop open forever, blocking Start next
+ * leg. Mirrors the backend's isRiderResolvedAtStop (trip-execution.rules.ts).
  */
 export function isRiderDoneAtStop(rider: CockpitRider, stopType: ManifestRouteStop['type']): boolean {
   if (rider.noShow || rider.droppedOffAt) return true;
@@ -67,14 +66,20 @@ export function resolveStops(routeStops: readonly ManifestRouteStop[], riders: r
       stop,
       riders: stopRiders,
       resolved: stopRiders.every((rider) => isRiderDoneAtStop(rider, stop.type)),
-      skipped: stop.type === 'DROPOFF' && stopRiders.length > 0 && stopRiders.every((rider) => rider.noShow),
     };
   });
 }
 
-/** The first stop, in visit order, with unfinished business — null once every stop is resolved. */
-export function findNextStop(resolutions: readonly StopResolution[]): ManifestRouteStop | null {
-  return resolutions.find((resolution) => !resolution.resolved)?.stop ?? null;
+function mergeStopIds(
+  routeStops: readonly ManifestRouteStop[],
+  serverMark: (stop: ManifestRouteStop) => string | null | undefined,
+  overlayStopIds: ReadonlySet<string>,
+): Set<string> {
+  const merged = new Set(overlayStopIds);
+  routeStops.forEach((stop) => {
+    if (serverMark(stop)) merged.add(stop.id);
+  });
+  return merged;
 }
 
 /** Stops the driver has reached: recorded by the server (arrivedAt), or queued / just sent from this device. */
@@ -82,9 +87,13 @@ export function mergeArrivedStopIds(
   routeStops: readonly ManifestRouteStop[],
   overlayArrivedStopIds: ReadonlySet<string>,
 ): Set<string> {
-  const arrived = new Set(overlayArrivedStopIds);
-  routeStops.forEach((stop) => {
-    if (stop.arrivedAt) arrived.add(stop.id);
-  });
-  return arrived;
+  return mergeStopIds(routeStops, (stop) => stop.arrivedAt, overlayArrivedStopIds);
+}
+
+/** Stops the driver has left with Start next leg: per the server (departedAt), or queued / just sent from this device. */
+export function mergeDepartedStopIds(
+  routeStops: readonly ManifestRouteStop[],
+  overlayDepartedStopIds: ReadonlySet<string>,
+): Set<string> {
+  return mergeStopIds(routeStops, (stop) => stop.departedAt, overlayDepartedStopIds);
 }

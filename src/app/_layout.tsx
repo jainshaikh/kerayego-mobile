@@ -3,6 +3,7 @@ import { Stack, router, usePathname, useSegments, type Href } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts, Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold } from '@expo-google-fonts/outfit';
@@ -105,14 +106,21 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <RootNavigator />
-            <StatusBar style="auto" />
-          </AuthProvider>
-        </QueryClientProvider>
-      </SafeAreaProvider>
+      {/* The app is edge-to-edge (Android's adjustResize no longer shrinks the
+          window for the keyboard), so keyboard avoidance comes from this
+          provider's components — FormScrollView, AppSheet. The translucent
+          flags keep it from adding its own status/navigation bar margins on
+          top of the safe-area insets every screen already applies. */}
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <RootNavigator />
+              <StatusBar style="auto" />
+            </AuthProvider>
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

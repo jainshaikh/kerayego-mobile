@@ -37,7 +37,8 @@ export interface DriverTripActions {
   optimisticEnded: boolean;
   noShowIds: Set<string>;
   arrivedStopIds: Set<string>;
-  // Stops whose Reached is still waiting in the offline queue (not yet sent).
+  departedStopIds: Set<string>;
+  // Stops whose Arrived is still waiting in the offline queue (not yet sent).
   queuedArrivalStopIds: Set<string>;
   optimisticEvents: Record<string, { pickupConfirmedAt?: string; droppedOffAt?: string }>;
   cancelTripPending: boolean;
@@ -46,11 +47,16 @@ export interface DriverTripActions {
   // Per rider / per stop, so one slow request never locks every other button.
   isRiderActionPending: (tripInquiryId: string) => boolean;
   isArrivalPending: (stopId: string) => boolean;
+  isDeparturePending: (stopId: string) => boolean;
   handleCancel: () => Promise<void>;
   handleStart: () => Promise<void>;
   handleEnd: () => Promise<void>;
   handleRiderEvent: (tripInquiryId: string, type: typeof TripEventType.PICKUP | typeof TripEventType.DROPOFF) => Promise<void>;
-  handleArrived: (stop: ManifestRouteStop, currentPosition: DriverPosition | null) => Promise<void>;
+  // `trigger` is recorded on the event for auditing — 'auto' when the cockpit
+  // marked the arrival itself (useAutoArrival).
+  handleArrived: (stop: ManifestRouteStop, currentPosition: DriverPosition | null, trigger?: 'manual' | 'auto') => Promise<void>;
+  // "Start next leg": leaving a stop once every rider there is verified.
+  handleDeparted: (stop: ManifestRouteStop) => Promise<void>;
   // "Didn't show": open the confirmation sheet for a rider, then confirm or close it.
   noShowOpen: boolean;
   // The rider the sheet is (or was last) open for — kept after it closes so
@@ -64,6 +70,7 @@ export interface DriverTripActions {
 
 const riderKey = (tripInquiryId: string) => `rider:${tripInquiryId}`;
 const stopKey = (stopId: string) => `stop:${stopId}`;
+const departureKey = (stopId: string) => `leave:${stopId}`;
 
 /**
  * Owns every day-of-trip mutation and its optimistic/offline-queued overlay
@@ -252,7 +259,11 @@ export function useDriverTripActions(tripId: string, offlineQueue: OfflineTripQu
     });
   };
 
-  const handleArrived = (stop: ManifestRouteStop, currentPosition: DriverPosition | null) => {
+  const handleArrived = (
+    stop: ManifestRouteStop,
+    currentPosition: DriverPosition | null,
+    trigger: 'manual' | 'auto' = 'manual',
+  ) => {
     if (!currentPosition) return Promise.resolve();
     return runExclusive(stopKey(stop.id), () => {
       const eventId = Crypto.randomUUID();
@@ -267,6 +278,7 @@ export function useDriverTripActions(tripId: string, offlineQueue: OfflineTripQu
           lng: currentPosition.lng,
           accuracyM: currentPosition.accuracy ?? undefined,
           isMockLocation: currentPosition.mocked ?? undefined,
+          trigger,
         },
       };
 
@@ -278,6 +290,28 @@ export function useDriverTripActions(tripId: string, offlineQueue: OfflineTripQu
       );
     });
   };
+
+  // The server refuses a departure before the arrival there or with a rider
+  // still unverified (409) — the panel only offers it once both hold, so a
+  // refusal means the two sides disagree and lands in actionError.
+  const handleDeparted = (stop: ManifestRouteStop) =>
+    runExclusive(departureKey(stop.id), () => {
+      const eventId = Crypto.randomUUID();
+      const occurredAt = new Date().toISOString();
+      const payload: RecordTripEventPayload = {
+        id: eventId,
+        type: TripEventType.DEPARTED,
+        occurredAt,
+        payload: { stopId: stop.id },
+      };
+
+      return runTripAction(
+        () => recordEvent.mutateAsync(payload),
+        offlineQueue,
+        () => ({ id: eventId, kind: 'event', tripId, createdAt: occurredAt, payload }),
+        setActionError,
+      );
+    });
 
   return {
     actionError,
@@ -291,6 +325,7 @@ export function useDriverTripActions(tripId: string, offlineQueue: OfflineTripQu
     optimisticEnded: overlay.ended,
     noShowIds: overlay.noShowIds,
     arrivedStopIds: overlay.arrivedStopIds,
+    departedStopIds: overlay.departedStopIds,
     queuedArrivalStopIds,
     optimisticEvents: overlay.riderEvents,
     cancelTripPending: cancelTrip.isPending,
@@ -298,11 +333,13 @@ export function useDriverTripActions(tripId: string, offlineQueue: OfflineTripQu
     endTripPending: endTrip.isPending,
     isRiderActionPending: (tripInquiryId) => pendingKeys.has(riderKey(tripInquiryId)),
     isArrivalPending: (stopId) => pendingKeys.has(stopKey(stopId)),
+    isDeparturePending: (stopId) => pendingKeys.has(departureKey(stopId)),
     handleCancel,
     handleStart,
     handleEnd,
     handleRiderEvent,
     handleArrived,
+    handleDeparted,
     noShowOpen: !!noShow?.open,
     noShowTarget: noShow?.target ?? null,
     noShowError,

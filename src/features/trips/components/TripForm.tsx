@@ -1,15 +1,15 @@
-import { Controller, useFieldArray, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pressable, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View } from 'react-native';
 
 import { useTheme } from '../../../theme';
 import { AppButton, AppInput, AppText, DateField } from '../../../components/ui';
-import { LocationField } from '../../location/components/LocationField';
 import { FilterChipRow } from '../../listings/components/FilterChipRow';
 import { useMyApprovedUserVehicles } from '../../user-vehicles/queries';
 import { tripFormSchema, type TripFormValues } from '../../../schemas/trip.schema';
 import { titleCase } from '../../../utils/format';
+import { parseWholeNumberInput, wholeNumberInputText } from '../../../utils/numberInput';
+import { TripStopsSection } from './TripStopsSection';
 
 interface TripFormProps {
   defaultValues?: Partial<TripFormValues>;
@@ -19,7 +19,7 @@ interface TripFormProps {
 }
 
 export function TripForm({ defaultValues, onSubmit, submitLabel, submitting }: TripFormProps) {
-  const { colors, spacing } = useTheme();
+  const { spacing } = useTheme();
   const approvedVehicles = useMyApprovedUserVehicles();
 
   const initialValues: Partial<TripFormValues> = {
@@ -43,32 +43,13 @@ export function TripForm({ defaultValues, onSubmit, submitLabel, submitting }: T
     control,
     handleSubmit,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<TripFormValues>({
     resolver: zodResolver(tripFormSchema),
     defaultValues: initialValues,
   });
 
-  const {
-    fields: pickupFields,
-    append: appendPickup,
-    remove: removePickup,
-  } = useFieldArray({
-    control,
-    name: 'pickupStops',
-  });
-
-  const {
-    fields: dropoffFields,
-    append: appendDropoff,
-    remove: removeDropoff,
-  } = useFieldArray({
-    control,
-    name: 'dropoffStops',
-  });
-
-  const userVehicleId = watch('userVehicleId');
+  const userVehicleId = useWatch({ control, name: 'userVehicleId' });
 
   const vehicleOptions = (approvedVehicles.data ?? []).map((v) => ({
     label: `${titleCase(v.make)} ${titleCase(v.model)} (${v.plateNumber})`,
@@ -139,241 +120,8 @@ export function TripForm({ defaultValues, onSubmit, submitLabel, submitting }: T
         </View>
       </View>
 
-      {/* Pickup Points Section */}
-      <View style={{ marginBottom: spacing.md }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: spacing.xs,
-          }}
-        >
-          <AppText variant="label">
-            Pickup Points <AppText color={colors.danger}>*</AppText>
-          </AppText>
-          {pickupFields.length < 10 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add another pickup point"
-              onPress={() => appendPickup({ label: '' })}
-              hitSlop={8}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-            >
-              <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-              <AppText variant="caption" color={colors.primary} style={{ fontWeight: '600' }}>
-                Add stop
-              </AppText>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {pickupFields.length > 1 ? (
-          <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
-            Riders can choose to be picked up at any of these points along your route.
-          </AppText>
-        ) : null}
-
-        {pickupFields.map((field, index) => (
-          <View key={field.id} style={{ marginBottom: spacing.xs }}>
-            {pickupFields.length > 1 ? (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 4,
-                }}
-              >
-                <AppText variant="caption" muted style={{ fontWeight: '600' }}>
-                  Stop {index + 1}
-                </AppText>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove pickup stop ${index + 1}`}
-                  onPress={() => removePickup(index)}
-                  hitSlop={8}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
-                >
-                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                  <AppText variant="caption" color={colors.danger}>
-                    Remove
-                  </AppText>
-                </Pressable>
-              </View>
-            ) : null}
-
-            <Controller
-              control={control}
-              name={`pickupStops.${index}.label`}
-              render={({ field: inputField, fieldState }) => (
-                <LocationField
-                  placeholder={
-                    index === 0
-                      ? 'Liaquatabad Chowrangi, near Total Petrol Pump'
-                      : 'Additional pickup stop'
-                  }
-                  value={inputField.value ?? ''}
-                  onChangeText={inputField.onChange}
-                  lat={watch(`pickupStops.${index}.lat`)}
-                  lng={watch(`pickupStops.${index}.lng`)}
-                  onLocationChange={(lat, lng) => {
-                    setValue(`pickupStops.${index}.lat`, lat, { shouldDirty: true });
-                    setValue(`pickupStops.${index}.lng`, lng, { shouldDirty: true });
-                  }}
-                  error={fieldState.error?.message}
-                  regionCodes={['PK', 'AE', 'SA']}
-                />
-              )}
-            />
-          </View>
-        ))}
-
-        {pickupFields.length < 10 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Add another pickup point"
-            onPress={() => appendPickup({ label: '' })}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingVertical: spacing.xs,
-              marginBottom: spacing.sm,
-              alignSelf: 'flex-start',
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-            <AppText color={colors.primary} style={{ fontWeight: '600', fontSize: 13 }}>
-              Add another pickup point
-            </AppText>
-          </Pressable>
-        )}
-
-        {pickupRootError ? (
-          <AppText variant="caption" color={colors.danger} style={{ marginBottom: spacing.sm }}>
-            {pickupRootError}
-          </AppText>
-        ) : null}
-      </View>
-
-      {/* Drop-off Points Section */}
-      <View style={{ marginBottom: spacing.md }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: spacing.xs,
-          }}
-        >
-          <AppText variant="label">
-            Drop-off Points <AppText color={colors.danger}>*</AppText>
-          </AppText>
-          {dropoffFields.length < 10 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add another drop-off point"
-              onPress={() => appendDropoff({ label: '' })}
-              hitSlop={8}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-            >
-              <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-              <AppText variant="caption" color={colors.primary} style={{ fontWeight: '600' }}>
-                Add stop
-              </AppText>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {dropoffFields.length > 1 ? (
-          <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
-            Riders can choose to be dropped off at any of these points along your route.
-          </AppText>
-        ) : null}
-
-        {dropoffFields.map((field, index) => (
-          <View key={field.id} style={{ marginBottom: spacing.xs }}>
-            {dropoffFields.length > 1 ? (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 4,
-                }}
-              >
-                <AppText variant="caption" muted style={{ fontWeight: '600' }}>
-                  Stop {index + 1}
-                </AppText>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove drop-off stop ${index + 1}`}
-                  onPress={() => removeDropoff(index)}
-                  hitSlop={8}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
-                >
-                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                  <AppText variant="caption" color={colors.danger}>
-                    Remove
-                  </AppText>
-                </Pressable>
-              </View>
-            ) : null}
-
-            <Controller
-              control={control}
-              name={`dropoffStops.${index}.label`}
-              render={({ field: inputField, fieldState }) => (
-                <LocationField
-                  placeholder={
-                    index === 0
-                      ? 'Drop-off near Karachi Cantt Station'
-                      : 'Additional drop-off stop'
-                  }
-                  value={inputField.value ?? ''}
-                  onChangeText={inputField.onChange}
-                  lat={watch(`dropoffStops.${index}.lat`)}
-                  lng={watch(`dropoffStops.${index}.lng`)}
-                  onLocationChange={(lat, lng) => {
-                    setValue(`dropoffStops.${index}.lat`, lat, { shouldDirty: true });
-                    setValue(`dropoffStops.${index}.lng`, lng, { shouldDirty: true });
-                  }}
-                  error={fieldState.error?.message}
-                  regionCodes={['PK', 'AE', 'SA']}
-                />
-              )}
-            />
-          </View>
-        ))}
-
-        {dropoffFields.length < 10 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Add another drop-off point"
-            onPress={() => appendDropoff({ label: '' })}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingVertical: spacing.xs,
-              marginBottom: spacing.sm,
-              alignSelf: 'flex-start',
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-            <AppText color={colors.primary} style={{ fontWeight: '600', fontSize: 13 }}>
-              Add another drop-off point
-            </AppText>
-          </Pressable>
-        )}
-
-        {dropoffRootError ? (
-          <AppText variant="caption" color={colors.danger} style={{ marginBottom: spacing.sm }}>
-            {dropoffRootError}
-          </AppText>
-        ) : null}
-      </View>
+      <TripStopsSection kind="pickup" control={control} setValue={setValue} error={pickupRootError} />
+      <TripStopsSection kind="dropoff" control={control} setValue={setValue} error={dropoffRootError} />
 
       <Controller
         control={control}
@@ -396,11 +144,16 @@ export function TripForm({ defaultValues, onSubmit, submitLabel, submitting }: T
             control={control}
             name="availableSeats"
             render={({ field }) => (
+              // Whole numbers 1–20 only (see parseWholeNumberInput); selecting
+              // the text on focus lets typing replace the default 3 outright.
               <AppInput
                 label="Available seats"
-                keyboardType="numeric"
-                value={field.value?.toString() ?? ''}
-                onChangeText={(v) => field.onChange(v ? Number(v) : undefined)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+                value={wholeNumberInputText(field.value)}
+                onChangeText={(text) => field.onChange(parseWholeNumberInput(text))}
+                onBlur={field.onBlur}
                 error={errors.availableSeats?.message}
               />
             )}
@@ -413,9 +166,12 @@ export function TripForm({ defaultValues, onSubmit, submitLabel, submitting }: T
             render={({ field }) => (
               <AppInput
                 label="Price / seat"
-                keyboardType="numeric"
-                value={field.value?.toString() ?? ''}
-                onChangeText={(v) => field.onChange(v ? Number(v) : undefined)}
+                keyboardType="number-pad"
+                maxLength={7}
+                selectTextOnFocus
+                value={wholeNumberInputText(field.value)}
+                onChangeText={(text) => field.onChange(parseWholeNumberInput(text))}
+                onBlur={field.onBlur}
                 error={errors.pricePerSeat?.message}
               />
             )}

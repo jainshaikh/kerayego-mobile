@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { Keyboard, Modal, Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { KeyboardAvoidingView, KeyboardController, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../theme';
@@ -14,6 +15,9 @@ interface AppSheetProps {
   subtitle?: string;
   // Fixed height for sheets whose content fills the space (a map, a chat);
   // otherwise the sheet sizes to its content, capped at 90% of the screen.
+  // A content-sized sheet rides up on top of the keyboard (shrinking, and its
+  // ScrollView scrolling, if it no longer fits); a fixed-height one stays put
+  // and its content handles the keyboard itself (ChatPanel does).
   height?: DimensionValue;
   // Full-bleed body (no padding) under a divided header — for content that
   // manages its own padding, like ChatPanel.
@@ -28,14 +32,20 @@ interface AppSheetProps {
 export function AppSheet({ visible, onClose, title, subtitle, height, flush = false, children }: AppSheetProps) {
   const { colors, radii, spacing } = useTheme();
   // Keeps a padded sheet's bottom buttons clear of the Android gesture bar /
-  // iOS home indicator (the sheet is drawn edge-to-edge at the screen bottom).
-  const { bottom: bottomInset } = useSafeAreaInsets();
+  // iOS home indicator (the sheet is drawn edge-to-edge at the screen bottom)
+  // — not needed while the sheet sits on top of the keyboard instead. The top
+  // inset stops a sheet pushed up by the keyboard sliding under the status bar.
+  const { top: topInset, bottom: bottomInset } = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const ridesKeyboard = height === undefined;
 
   // With the keyboard up, a tap outside usually means "put the keyboard
   // away", not "throw away this form" — so that first tap only dismisses it.
+  // KeyboardController (not RN's Keyboard) because it also tracks a keyboard
+  // opened inside this Modal's own window.
   const handleBackdropPress = () => {
-    if (Keyboard.isVisible()) {
-      Keyboard.dismiss();
+    if (KeyboardController.isVisible()) {
+      KeyboardController.dismiss();
       return;
     }
     onClose();
@@ -43,7 +53,11 @@ export function AppSheet({ visible, onClose, title, subtitle, height, flush = fa
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+      <KeyboardAvoidingView
+        behavior="padding"
+        enabled={ridesKeyboard}
+        style={{ flex: 1, justifyContent: 'flex-end', paddingTop: topInset, backgroundColor: 'rgba(0,0,0,0.4)' }}
+      >
         {/* A sibling behind the sheet, not its parent — so taps on the sheet
             itself never reach it, only taps on the visible backdrop do. */}
         <Pressable style={StyleSheet.absoluteFill} onPress={handleBackdropPress} accessibilityLabel="Close" />
@@ -53,7 +67,7 @@ export function AppSheet({ visible, onClose, title, subtitle, height, flush = fa
             borderTopLeftRadius: radii.sheet,
             borderTopRightRadius: radii.sheet,
             overflow: 'hidden',
-            ...(height !== undefined ? { height } : { maxHeight: '90%' }),
+            ...(height !== undefined ? { height } : { maxHeight: '90%', flexShrink: 1 }),
           }}
         >
           <View
@@ -98,13 +112,18 @@ export function AppSheet({ visible, onClose, title, subtitle, height, flush = fa
             style={{
               flexShrink: 1,
               ...(height !== undefined ? { flex: 1 } : null),
-              ...(flush ? null : { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg + bottomInset }),
+              ...(flush
+                ? null
+                : {
+                    paddingHorizontal: spacing.lg,
+                    paddingBottom: spacing.lg + (ridesKeyboard && keyboardVisible ? 0 : bottomInset),
+                  }),
             }}
           >
             {children}
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

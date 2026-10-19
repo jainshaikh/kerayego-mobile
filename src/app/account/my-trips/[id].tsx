@@ -16,6 +16,7 @@ import { useDriverTripActions } from '../../../features/trips/driverCockpit/useD
 import { useDriverChatInbox } from '../../../features/trips/driverCockpit/useDriverChatInbox';
 import { useDriverBackgroundLocation } from '../../../features/liveRide/backgroundLocation/useDriverBackgroundLocation';
 import { DriverLiveCockpit } from '../../../features/trips/driverCockpit/DriverLiveCockpit';
+import { DriverRideSummary } from '../../../features/trips/driverCockpit/DriverRideSummary';
 import { DriverPostedTripView } from '../../../features/trips/driverCockpit/DriverPostedTripView';
 import { CHAT_INQUIRY_PARAM } from '../../../features/notifications/pushRouting';
 import { driverChatLinkDecision } from '../../../features/notifications/chatDeepLink';
@@ -40,7 +41,13 @@ export default function MyTripDetailScreen() {
   // offline. Only the cockpit's own visibility is gated on effective status.
   // dataUpdatedAt: when this device received it — anchors the manifest's
   // serverNow for the cockpit's stop wait timers and no-show countdowns.
-  const { data: manifest, isLoading: manifestLoading, dataUpdatedAt: manifestReceivedAt } = useTripManifest(id);
+  const {
+    data: manifest,
+    isLoading: manifestLoading,
+    isError: manifestFailed,
+    refetch: refetchManifest,
+    dataUpdatedAt: manifestReceivedAt,
+  } = useTripManifest(id);
   const offlineQueue = useOfflineTripQueue(id, user?.id);
   const { isConnected } = useRideSocket();
 
@@ -77,11 +84,15 @@ export default function MyTripDetailScreen() {
     optimisticEvents: driverActions.optimisticEvents,
     noShowIds: driverActions.noShowIds,
     arrivedStopIds: driverActions.arrivedStopIds,
+    departedStopIds: driverActions.departedStopIds,
     currentPosition: location.currentPosition,
-    active: effectiveInProgress,
   });
   const chat = useDriverChatInbox(user?.id);
-  const showManifest = effectiveInProgress || effectiveCompleted;
+  // Live ride: the cockpit (map, leg panel, chat). Once it has ended — or
+  // when a completed trip is reopened later — the ride summary instead.
+  const showCockpit = effectiveInProgress && !effectiveCompleted;
+  const showSummary = effectiveCompleted;
+  const fullScreen = showCockpit || showSummary;
   // A chat push's deep link: opens that rider's thread once the cockpit can
   // show it, or says why it can't (the trip hasn't started, the seat is gone).
   const chatLink = useChatDeepLink(
@@ -91,7 +102,7 @@ export default function MyTripDetailScreen() {
       ? driverChatLinkDecision({
           requestedInquiryId: chatInquiryId,
           tripStatus: trip?.status,
-          cockpitShown: showManifest,
+          cockpitShown: showCockpit,
           manifestRiders: manifest?.riders,
           manifestLoading,
           inboxRiderName: inquiriesRes?.data.find((inquiry) => inquiry.id === chatInquiryId)?.user.name ?? null,
@@ -107,24 +118,35 @@ export default function MyTripDetailScreen() {
   if (isError || !trip) return <ErrorState message="Couldn't load this trip." onRetry={refetch} />;
 
   return (
-    // While the ride lock hides the native header there's nothing above the
-    // cockpit to clear the status bar / notch (the app draws edge-to-edge),
-    // so the screen takes the top safe-area edge itself.
-    <AppScreen edges={effectiveInProgress ? ['top', 'left', 'right', 'bottom'] : ['left', 'right', 'bottom']}>
+    // While the cockpit or the summary hides the native header there's
+    // nothing above them to clear the status bar / notch (the app draws
+    // edge-to-edge), so the screen takes the top safe-area edge itself.
+    <AppScreen edges={fullScreen ? ['top', 'left', 'right', 'bottom'] : ['left', 'right', 'bottom']}>
       {/* Ride lock: the hardware/gesture back effect above already swallows
           the physical back button, but the native stack header's own back
           chevron and iOS/Android swipe-back gesture are a SEPARATE exit path
           it doesn't touch — suppress both here, only while the ride is
           actually in progress, so "End ride" stays the only way out.
-          Restored automatically once the ride is no longer in progress. */}
+          Restored automatically once the ride is no longer in progress. The
+          summary has no header either: its Close button is the way out. */}
       <Stack.Screen
-        options={{ headerShown: !effectiveInProgress, gestureEnabled: !effectiveInProgress, title: 'Trip Details' }}
+        options={{ headerShown: !fullScreen, gestureEnabled: !effectiveInProgress, title: 'Trip Details' }}
       />
-      {showManifest ? (
+      {showSummary ? (
+        <DriverRideSummary
+          trip={trip}
+          manifest={manifest}
+          manifestFailed={manifestFailed}
+          onRetryManifest={refetchManifest}
+          riders={stopProgress.mergedRiders}
+        />
+      ) : showCockpit ? (
         <DriverLiveCockpit
           trip={trip}
           manifest={manifest}
           manifestLoading={manifestLoading}
+          manifestFailed={manifestFailed}
+          onRetryManifest={refetchManifest}
           effectiveInProgress={effectiveInProgress}
           effectiveCompleted={effectiveCompleted}
           isConnected={isConnected}

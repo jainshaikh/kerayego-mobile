@@ -20,6 +20,8 @@ export interface TripActionOverlay {
   noShowIds: Set<string>;
   // The driver's ARRIVED, by the stop it was recorded at.
   arrivedStopIds: Set<string>;
+  // The driver's DEPARTED ("Start next leg"), by the stop they left.
+  departedStopIds: Set<string>;
   // A rider's own ARRIVED self-report (no stop on the payload), by tripInquiryId.
   arrivedInquiryIds: Set<string>;
 }
@@ -42,6 +44,7 @@ export function deriveTripActionOverlay(actions: readonly TripActionDraft[]): Tr
     riderEvents: {},
     noShowIds: new Set(),
     arrivedStopIds: new Set(),
+    departedStopIds: new Set(),
     arrivedInquiryIds: new Set(),
   };
   const seen = new Set<string>();
@@ -64,6 +67,11 @@ export function deriveTripActionOverlay(actions: readonly TripActionDraft[]): Tr
       const stopId = stopIdOf(payload);
       if (stopId) overlay.arrivedStopIds.add(stopId);
       else if (tripInquiryId) overlay.arrivedInquiryIds.add(tripInquiryId);
+      continue;
+    }
+    if (type === TripEventType.DEPARTED) {
+      const stopId = stopIdOf(payload);
+      if (stopId) overlay.departedStopIds.add(stopId);
       continue;
     }
     if (!tripInquiryId) continue;

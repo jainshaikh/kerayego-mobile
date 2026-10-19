@@ -18,8 +18,8 @@ interface DriverChatLinkInput {
   requestedInquiryId: string;
   // Undefined until the trip has loaded.
   tripStatus: TripStatus | undefined;
-  // The live cockpit — the driver's only screen with chat — is on show
-  // (trip in progress or just completed).
+  // The live cockpit — the driver's only screen with chat — is on show (the
+  // ride is in progress; once it ends, the ride summary replaces it).
   cockpitShown: boolean;
   // The manifest's riders: undefined until it has loaded (or if it failed).
   manifestRiders: { id: string; user: { name: string } }[] | undefined;
