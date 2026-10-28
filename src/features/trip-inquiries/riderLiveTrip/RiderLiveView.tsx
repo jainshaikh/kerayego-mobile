@@ -97,8 +97,10 @@ export function RiderLiveView({
 
   const { trip } = inquiry;
   const driverName = trip.postedBy.name;
-  const vehicleName = `${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}`;
-  const vehiclePlate = trip.userVehicle.plateNumber;
+  // null on a return trip (see TripInquiryTrip.userVehicle).
+  const vehicle = trip.userVehicle;
+  const vehicleName = vehicle ? `${titleCase(vehicle.make)} ${titleCase(vehicle.model)}` : null;
+  const vehiclePlate = vehicle?.plateNumber ?? null;
 
   const pickupDistanceLabel =
     route.pickupDistanceM !== null ? `${formatDistanceShort(route.pickupDistanceM / 1000)} from you` : null;
@@ -277,7 +279,7 @@ export function RiderLiveView({
               driverBadge={copy.driverBadge}
               callNumber={driverCallNumber(trip)}
               whatsappNumber={trip.contactNumber}
-              vehicle={trip.userVehicle}
+              vehicle={vehicle}
               onOpenChat={onOpenChat}
             />
           </View>
@@ -328,8 +330,8 @@ export function RiderLiveView({
         onClose={onCloseChat}
         tripInquiryId={inquiry.id}
         riderName={driverName}
-        pickupLabel={vehicleName}
-        dropoffLabel={vehiclePlate}
+        pickupLabel={vehicleName ?? trip.originCity}
+        dropoffLabel={vehiclePlate ?? trip.destinationCity}
       />
     </>
   );

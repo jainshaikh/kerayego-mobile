@@ -9,8 +9,9 @@ import type { TripDetail } from '../../../types/api.types';
 import type { TripInquiry } from '../../../api/trip-inquiries.api';
 import type { useUpdateTripInquiryStatus } from '../../trip-inquiries/queries';
 import { TripInquiryStatus, TripStatus, tripInquiryStatusMeta, tripPosterActions, tripStatusMeta } from '../../../types/enums';
-import { formatDate, formatPrice, titleCase } from '../../../utils/format';
+import { formatDate, formatPrice } from '../../../utils/format';
 import type { DriverTripActions } from './useDriverTripActions';
+import { tripVehicle } from '../tripVehicle';
 import type { OfflineTripQueue } from '../offlineSync';
 import { OfflineQueueNotice } from '../components/OfflineQueueNotice';
 
@@ -43,6 +44,8 @@ export function DriverPostedTripView({
 }: DriverPostedTripViewProps) {
   const { colors, spacing } = useTheme();
   const [decliningId, setDecliningId] = useState<string | null>(null);
+  // A return trip runs in a business's fleet car — see tripVehicle.
+  const vehicle = tripVehicle(trip);
   const [declineNote, setDeclineNote] = useState('');
 
   const statusMeta = tripStatusMeta[trip.status];
@@ -94,12 +97,12 @@ export function DriverPostedTripView({
         <AppText variant="label" style={{ marginBottom: spacing.sm }}>
           Vehicle
         </AppText>
-        {trip.userVehicle.images.length > 0 ? (
+        {vehicle && vehicle.images.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              {trip.userVehicle.images.map((image) => (
+              {vehicle.images.map((image) => (
                 <View
-                  key={image.id}
+                  key={image.id ?? image.url}
                   style={{ width: 112, height: 80, borderRadius: 8, overflow: 'hidden', backgroundColor: colors.surfaceAlt }}
                 >
                   <Image source={{ uri: image.url }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
@@ -108,8 +111,9 @@ export function DriverPostedTripView({
             </View>
           </ScrollView>
         ) : null}
-        <Row label="Vehicle" value={`${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}`} />
-        <Row label="Plate" value={trip.userVehicle.plateNumber} />
+        {vehicle ? <Row label="Vehicle" value={vehicle.name} /> : null}
+        {vehicle?.plateNumber ? <Row label="Plate" value={vehicle.plateNumber} /> : null}
+        {trip.providerProfile ? <Row label="Business" value={trip.providerProfile.businessName} /> : null}
       </AppCard>
 
       {trip.notes ? (

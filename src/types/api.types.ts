@@ -463,6 +463,12 @@ export interface TripCard {
   status: TripStatus;
   createdAt: string;
   postedBy: { id: string; name: string };
+  // A return trip (isReturnTrip) is a rental business driving one of its
+  // fleet cars back after a booking: userVehicle is null then, and
+  // fleetVehicle/providerProfile are set instead. Every other trip runs in
+  // the poster's own userVehicle, with fleetVehicle/providerProfile null.
+  // Read the car through features/trips/tripVehicle.ts, not either field.
+  isReturnTrip: boolean;
   userVehicle: {
     id: string;
     make: string;
@@ -470,13 +476,38 @@ export interface TripCard {
     year: number | null;
     color: string | null;
     images: TripVehicleImage[];
-  };
+  } | null;
+  fleetVehicle: TripFleetVehicle | null;
+  providerProfile: TripProviderProfile | null;
 }
 
-export interface TripDetail extends Omit<TripCard, 'userVehicle'> {
+// A rental listing (Vehicle) driving a return trip — no colour or plate.
+export interface TripFleetVehicle {
+  id: string;
+  // Listing display title, e.g. "2023 Toyota Camry SE".
+  title: string;
+  make: string;
+  model: string;
+  year: number;
+  seatingCapacity: number;
+  images: TripVehicleImage[];
+}
+
+// The rental business behind a return trip.
+export interface TripProviderProfile {
+  id: string;
+  businessName: string;
+  slug: string;
+  logoUrl: string | null;
+  verificationStatus: ProviderStatus;
+}
+
+export interface TripDetail extends Omit<TripCard, 'userVehicle' | 'fleetVehicle'> {
   rejectionReason: string | null;
   cancelReason: string | null;
   updatedAt: string;
+  // The booking a return trip was posted from; null otherwise.
+  returnFromBookingId: string | null;
   userVehicle: {
     id: string;
     make: string;
@@ -488,7 +519,11 @@ export interface TripDetail extends Omit<TripCard, 'userVehicle'> {
     // The market the trip's prices are in (see currencyForMarket).
     country?: Market;
     images: UserVehicleImage[];
-  };
+  } | null;
+  fleetVehicle: (Omit<TripFleetVehicle, 'images'> & {
+    status: VehicleStatus;
+    images: { id: string; url: string; altText: string | null; sortOrder: number }[];
+  }) | null;
 }
 
 // ─── Push notification data ──────────────────────────────────────────────────

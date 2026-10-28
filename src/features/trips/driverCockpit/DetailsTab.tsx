@@ -3,8 +3,9 @@ import { AppCard, AppText, DetailRow } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripManifest } from '../../../api/trips.api';
 import type { TripDetail } from '../../../types/api.types';
-import { formatDate, formatPrice, titleCase } from '../../../utils/format';
+import { formatDate, formatPrice } from '../../../utils/format';
 import type { CockpitRider } from './stopProgress';
+import { tripVehicle } from '../tripVehicle';
 
 interface DetailsTabProps {
   trip: TripDetail;
@@ -32,6 +33,8 @@ export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
   // departureAt) — the trip's scheduled departure is the closest real,
   // non-fabricated stand-in for it.
   const startedLabel = formatDate(trip.departureAt);
+  // A return trip runs in a business's fleet car — see tripVehicle.
+  const vehicle = tripVehicle(trip);
 
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: spacing.xs }}>
@@ -56,8 +59,9 @@ export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
             Vehicle
           </AppText>
           <View style={{ gap: spacing.md }}>
-            <DetailRow label="Vehicle" value={`${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}`} />
-            <DetailRow label="Plate" value={trip.userVehicle.plateNumber} />
+            {vehicle ? <DetailRow label="Vehicle" value={vehicle.name} /> : null}
+            {vehicle?.plateNumber ? <DetailRow label="Plate" value={vehicle.plateNumber} /> : null}
+            {trip.providerProfile ? <DetailRow label="Business" value={trip.providerProfile.businessName} /> : null}
             <DetailRow label="Seats offered" value={String(trip.availableSeats)} />
           </View>
         </AppCard>

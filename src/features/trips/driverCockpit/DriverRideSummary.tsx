@@ -46,7 +46,8 @@ export function DriverRideSummary({ trip, manifest, manifestFailed, onRetryManif
   const [beforeDeparture] = useState(() => new Date(trip.departureAt).getTime() > Date.now());
 
   const summary = summarizeRide(riders);
-  const currency = currencyForMarket(trip.userVehicle.country);
+  // A return trip has no userVehicle (it runs in a fleet car).
+  const currency = currencyForMarket(trip.userVehicle?.country);
   // Backend Decimal — a string over JSON.
   const pricePerSeat = Number(trip.pricePerSeat);
   const earnings = Number.isFinite(pricePerSeat) ? formatPrice(pricePerSeat * summary.seats, currency) : '—';

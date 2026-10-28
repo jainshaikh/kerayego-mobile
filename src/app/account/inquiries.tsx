@@ -7,7 +7,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/States';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { useTheme } from '../../theme';
-import { bookingStatusMeta } from '../../types/enums';
+import { bookingStatusDisplay } from '../../types/enums';
 import { formatDate } from '../../utils/format';
 
 export default function MyInquiriesScreen() {
@@ -32,7 +32,7 @@ export default function MyInquiriesScreen() {
                 <AppText variant="label" style={{ flex: 1, marginRight: spacing.sm }} numberOfLines={1}>
                   {item.vehicle.title}
                 </AppText>
-                <StatusBadge label={bookingStatusMeta[item.status].label} tone={bookingStatusMeta[item.status].tone} />
+                <StatusBadge label={bookingStatusDisplay(item.status).label} tone={bookingStatusDisplay(item.status).tone} />
               </View>
               <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
                 {formatDate(item.requestedFromDate)} – {formatDate(item.requestedToDate)}

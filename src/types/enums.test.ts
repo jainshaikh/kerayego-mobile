@@ -3,6 +3,7 @@ import { describe, expect, it } from '@jest/globals';
 import {
   BOOKING_TRANSITIONS,
   BookingRequestStatus,
+  bookingStatusDisplay,
   bookingStatusMeta,
   canOwnerEditUserVehicle,
   DocumentStatus,
@@ -18,6 +19,7 @@ import {
   TripStatus,
   tripStatusMeta,
   userBookingActions,
+  UserStatus,
   UserVehicleStatus,
   userVehicleStatusMeta,
   VehicleStatus,
@@ -36,7 +38,9 @@ const BACKEND_ENUM_VALUES = {
   TripEventType: ['START', 'ARRIVED', 'PICKUP', 'NO_SHOW', 'DROPOFF', 'END', 'DEPARTED'],
   PickupSource: ['DRIVER_TAP', 'AUTO_ON_TRIP_END'],
   UserVehicleStatus: ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SUSPENDED'],
-  BookingRequestStatus: ['PENDING', 'CONTACTED', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+  BookingRequestStatus: ['PENDING', 'CONTACTED', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+  UserStatus: ['ACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION', 'PENDING_DELETION', 'DELETED'],
+  VehicleStatus: ['DRAFT', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'ARCHIVED', 'SUSPENDED'],
   Market: ['PK', 'SA', 'AE'],
   DocumentStatus: ['PENDING', 'APPROVED', 'REJECTED'],
   DocumentType: [
@@ -102,7 +106,11 @@ const BACKEND_BOOKING_TRANSITIONS: typeof BOOKING_TRANSITIONS = {
     nextStates: [BookingRequestStatus.ACCEPTED, BookingRequestStatus.REJECTED],
   },
   [BookingRequestStatus.ACCEPTED]: {
-    allowedBy: ['ADMIN'],
+    allowedBy: ['PROVIDER', 'ADMIN'],
+    nextStates: [BookingRequestStatus.IN_PROGRESS, BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
+  },
+  [BookingRequestStatus.IN_PROGRESS]: {
+    allowedBy: ['PROVIDER', 'ADMIN'],
     nextStates: [BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
   },
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
@@ -120,6 +128,8 @@ describe('enum mirrors', () => {
     ['PickupSource', PickupSource],
     ['UserVehicleStatus', UserVehicleStatus],
     ['BookingRequestStatus', BookingRequestStatus],
+    ['UserStatus', UserStatus],
+    ['VehicleStatus', VehicleStatus],
     ['Market', Market],
     ['DocumentStatus', DocumentStatus],
     ['DocumentType', DocumentType],
@@ -148,6 +158,11 @@ describe('status display meta', () => {
       expect(meta[status]?.label).toEqual(expect.any(String));
       expect(meta[status].label.length).toBeGreaterThan(0);
     }
+  });
+
+  it('bookingStatusDisplay falls back to the raw value for a status this build does not know', () => {
+    expect(bookingStatusDisplay(BookingRequestStatus.IN_PROGRESS)).toEqual({ label: 'In Progress', tone: 'info' });
+    expect(bookingStatusDisplay('SOME_FUTURE_STATUS')).toEqual({ label: 'SOME_FUTURE_STATUS', tone: 'neutral' });
   });
 });
 

@@ -14,7 +14,8 @@ interface DriverTabProps {
   // driverCallNumber(trip): the driver's own phone, else the listing's number.
   callNumber: string | null;
   whatsappNumber: string | null;
-  vehicle: TripInquiryVehicle;
+  // null on a return trip (see TripInquiryTrip.userVehicle).
+  vehicle: TripInquiryVehicle | null;
   onOpenChat: () => void;
 }
 
@@ -42,12 +43,14 @@ export function DriverTab({ driverName, driverBadge, callNumber, whatsappNumber,
           </View>
         </AppCard>
 
-        <AppCard>
-          <AppText variant="label" style={{ marginBottom: spacing.md }}>
-            Vehicle
-          </AppText>
-          <VehicleSummary vehicle={vehicle} />
-        </AppCard>
+        {vehicle ? (
+          <AppCard>
+            <AppText variant="label" style={{ marginBottom: spacing.md }}>
+              Vehicle
+            </AppText>
+            <VehicleSummary vehicle={vehicle} />
+          </AppCard>
+        ) : null}
       </View>
     </ScrollView>
   );

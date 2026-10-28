@@ -11,6 +11,8 @@ export enum UserStatus {
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED',
   PENDING_VERIFICATION = 'PENDING_VERIFICATION',
+  PENDING_DELETION = 'PENDING_DELETION',
+  DELETED = 'DELETED',
 }
 
 export enum ProviderStatus {
@@ -27,12 +29,14 @@ export enum VehicleStatus {
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
   ARCHIVED = 'ARCHIVED',
+  SUSPENDED = 'SUSPENDED',
 }
 
 export enum BookingRequestStatus {
   PENDING = 'PENDING',
   CONTACTED = 'CONTACTED',
   ACCEPTED = 'ACCEPTED',
+  IN_PROGRESS = 'IN_PROGRESS',
   REJECTED = 'REJECTED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
@@ -149,6 +153,7 @@ export const bookingStatusMeta: Record<
   [BookingRequestStatus.PENDING]: { label: 'Pending', tone: 'warning' },
   [BookingRequestStatus.CONTACTED]: { label: 'Contacted', tone: 'accent' },
   [BookingRequestStatus.ACCEPTED]: { label: 'Accepted', tone: 'success' },
+  [BookingRequestStatus.IN_PROGRESS]: { label: 'In Progress', tone: 'info' },
   [BookingRequestStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
   [BookingRequestStatus.CANCELLED]: { label: 'Cancelled', tone: 'neutral' },
   [BookingRequestStatus.COMPLETED]: { label: 'Completed', tone: 'complete' },
@@ -163,7 +168,17 @@ export const vehicleStatusMeta: Record<
   [VehicleStatus.APPROVED]: { label: 'Approved', tone: 'success' },
   [VehicleStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
   [VehicleStatus.ARCHIVED]: { label: 'Archived', tone: 'neutral' },
+  [VehicleStatus.SUSPENDED]: { label: 'Suspended', tone: 'danger' },
 };
+
+/**
+ * Display meta for a booking status, safe for a status this build doesn't
+ * know yet (the backend adds statuses over time) — it shows the raw value
+ * instead of crashing.
+ */
+export function bookingStatusDisplay(status: string): { label: string; tone: StatusTone } {
+  return bookingStatusMeta[status as BookingRequestStatus] ?? { label: status, tone: 'neutral' };
+}
 
 // Backend BOOKING_TRANSITIONS (common/enums/booking-status.enum.ts) — mirrored here
 // so the mobile UI only ever shows actions the backend will actually accept.
@@ -187,11 +202,16 @@ export const BOOKING_TRANSITIONS: Record<
     nextStates: [BookingRequestStatus.ACCEPTED, BookingRequestStatus.REJECTED],
   },
   [BookingRequestStatus.ACCEPTED]: {
-    allowedBy: ['ADMIN'],
+    allowedBy: ['PROVIDER', 'ADMIN'],
     nextStates: [
+      BookingRequestStatus.IN_PROGRESS,
       BookingRequestStatus.COMPLETED,
       BookingRequestStatus.CANCELLED,
     ],
+  },
+  [BookingRequestStatus.IN_PROGRESS]: {
+    allowedBy: ['PROVIDER', 'ADMIN'],
+    nextStates: [BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
   },
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.CANCELLED]: { allowedBy: [], nextStates: [] },

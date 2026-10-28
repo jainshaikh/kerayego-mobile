@@ -96,7 +96,7 @@ export function RiderPreLiveView({
               <Row label="Your pickup" value={ownPickupPoint(inquiry).label} />
               <Row label="Your drop-off" value={ownDropoffPoint(inquiry).label} />
               {inquiry.pickupNote ? <Row label="Your note" value={inquiry.pickupNote} /> : null}
-              <Row label="Vehicle" value={vehicleDisplayName(trip.userVehicle)} />
+              {trip.userVehicle ? <Row label="Vehicle" value={vehicleDisplayName(trip.userVehicle)} /> : null}
               {fare ? <Row label="Price / seat" value={fare.perSeat} /> : null}
               {fare && inquiry.requestedSeats > 1 ? <Row label="Total" value={fare.total} /> : null}
             </AppCard>

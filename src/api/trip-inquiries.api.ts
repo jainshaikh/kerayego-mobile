@@ -71,7 +71,10 @@ export interface TripInquiryTrip {
   // The driver's personal email/phone reach the rider only once their seat
   // is ACCEPTED; null before that and after a rejection/expiry/cancellation.
   postedBy: { id: string; name: string; email: string | null; phone: string | null };
-  userVehicle: TripInquiryVehicle;
+  // null on a return trip (a rental business's fleet car) — the backend's
+  // trip-inquiry responses don't carry that fleet vehicle, so there is no
+  // car to show then.
+  userVehicle: TripInquiryVehicle | null;
   // GET /trip-inquiries/:id only, from a newer backend (absent otherwise) —
   // the rider's live view can't get them from the public GET /trips/:id,
   // which 404s once the trip has started.

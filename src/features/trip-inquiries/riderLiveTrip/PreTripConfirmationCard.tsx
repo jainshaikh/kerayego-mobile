@@ -99,11 +99,15 @@ export function PreTripConfirmationCard({ inquiry, serverClock }: PreTripConfirm
         <StopRow heading="Your drop-off" point={ownDropoffPoint(inquiry)} />
       </View>
 
-      <Divider />
-      <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
-        Vehicle
-      </AppText>
-      <VehicleSummary vehicle={trip.userVehicle} />
+      {trip.userVehicle ? (
+        <>
+          <Divider />
+          <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
+            Vehicle
+          </AppText>
+          <VehicleSummary vehicle={trip.userVehicle} />
+        </>
+      ) : null}
 
       {fare ? (
         <>

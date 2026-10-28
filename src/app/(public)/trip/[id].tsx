@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '../../../auth/auth-context';
 import { useTrip } from '../../../features/trips/queries';
+import { tripVehicle } from '../../../features/trips/tripVehicle';
 import { TripInquiryFormSheet } from '../../../features/trips/components/TripInquiryFormSheet';
 import { AuthRequiredSheet } from '../../../components/auth/AuthRequiredSheet';
 import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
@@ -64,6 +65,9 @@ export default function TripDetailScreen() {
       />
     );
 
+  // A return trip runs in a business's fleet car — see tripVehicle.
+  const vehicle = tripVehicle(trip);
+
   // Requesting a seat needs an account — ask a guest to sign in before they
   // fill out the form, not after the backend rejects the submit.
   const handleRequestSeats = () => {
@@ -110,16 +114,16 @@ export default function TripDetailScreen() {
           <AppText muted> / seat</AppText>
         </View>
 
-        {trip.userVehicle.images.length > 0 ? (
+        {vehicle && vehicle.images.length > 0 ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={{ marginTop: spacing.lg }}
           >
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              {trip.userVehicle.images.map((image) => (
+              {vehicle.images.map((image) => (
                 <View
-                  key={image.id}
+                  key={image.id ?? image.url}
                   style={{
                     width: 220,
                     aspectRatio: 16 / 10,
@@ -132,10 +136,7 @@ export default function TripDetailScreen() {
                     source={{ uri: image.url }}
                     style={{ width: '100%', height: '100%' }}
                     contentFit="cover"
-                    accessibilityLabel={
-                      image.altText ??
-                      `${trip.userVehicle.make} ${trip.userVehicle.model}`
-                    }
+                    accessibilityLabel={image.altText ?? vehicle.name}
                   />
                 </View>
               ))}
@@ -180,18 +181,25 @@ export default function TripDetailScreen() {
             }}
           >
             <AppText variant="label">Vehicle</AppText>
-            <RatingSummaryBadge
-              subjectType="USER_VEHICLE"
-              subjectId={trip.userVehicle.id}
-              size="sm"
-            />
+            {vehicle ? (
+              <RatingSummaryBadge
+                subjectType={vehicle.isFleet ? 'VEHICLE' : 'USER_VEHICLE'}
+                subjectId={vehicle.id}
+                size="sm"
+              />
+            ) : null}
           </View>
-          <Row
-            label="Vehicle"
-            value={`${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}${trip.userVehicle.year ? ` (${trip.userVehicle.year})` : ''}`}
-          />
-          {trip.userVehicle.color ? (
-            <Row label="Color" value={titleCase(trip.userVehicle.color)} />
+          {vehicle ? (
+            <Row
+              label="Vehicle"
+              value={`${vehicle.name}${vehicle.year && !vehicle.isFleet ? ` (${vehicle.year})` : ''}`}
+            />
+          ) : null}
+          {vehicle?.color ? (
+            <Row label="Color" value={titleCase(vehicle.color)} />
+          ) : null}
+          {trip.providerProfile ? (
+            <Row label="Operated by" value={trip.providerProfile.businessName} />
           ) : null}
           <View
             style={{
