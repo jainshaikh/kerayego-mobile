@@ -10,6 +10,11 @@ module.exports = {
     ios: {
       bundleIdentifier: 'com.kerayego.app',
       icon: './assets/images/icon.png',
+      entitlements: {
+        // Required for background/killed-state push delivery via APNs.
+        // Use 'development' for debug builds; release builds must use 'production'.
+        'aps-environment': 'production',
+      },
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       },
