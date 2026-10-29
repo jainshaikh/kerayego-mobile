@@ -1,5 +1,11 @@
 import apiClient from './client';
-import type { ApiResponse, BookingRequest, PaginationMeta } from '../types/api.types';
+import type {
+  ApiResponse,
+  BookingLiveDriver,
+  BookingLiveRouteFix,
+  BookingRequest,
+  PaginationMeta,
+} from '../types/api.types';
 import type { BookingRequestStatus, RentalDurationType } from '../types/enums';
 
 export interface CreateBookingRequestPayload {
@@ -44,6 +50,19 @@ export const bookingRequestsApi = {
 
   updateStatus: async (id: string, data: UpdateBookingStatusPayload) => {
     const res = await apiClient.patch<ApiResponse<BookingRequest>>(`/booking-requests/${id}/status`, data);
+    return res.data.data;
+  },
+
+  // The customer's view of their assigned driver while the rental is
+  // IN_PROGRESS (lastLocation null otherwise).
+  getLiveDriver: async (id: string) => {
+    const res = await apiClient.get<ApiResponse<BookingLiveDriver>>(`/booking-requests/${id}/live-driver`);
+    return res.data.data;
+  },
+
+  // The driver's newest 200 fixes, oldest first — the breadcrumb on that map.
+  getLiveRoute: async (id: string) => {
+    const res = await apiClient.get<ApiResponse<BookingLiveRouteFix[]>>(`/booking-requests/${id}/live-route`);
     return res.data.data;
   },
 };

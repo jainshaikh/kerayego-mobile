@@ -3,6 +3,8 @@ import { ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 
 import { useBookingRequest, useUpdateBookingStatus } from '../../../features/booking-requests/queries';
+import { RentalLiveDriverCard } from '../../../features/booking-requests/components/RentalLiveDriverCard';
+import { CustomerLocationSharingCard } from '../../../features/liveRide/components/CustomerLocationSharingCard';
 import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
@@ -45,6 +47,13 @@ export default function MyInquiryDetailScreen() {
         <AppText muted style={{ marginTop: spacing.xs }}>
           {booking.providerProfile.businessName}
         </AppText>
+
+        {/* The assigned driver live on a map, only while the rental runs. */}
+        {booking.status === BookingRequestStatus.IN_PROGRESS ? <RentalLiveDriverCard bookingId={booking.id} /> : null}
+
+        {/* Only while the backend says this booking's sharing window is open
+            (an hour before pickup until the driver picks the customer up). */}
+        <CustomerLocationSharingCard target={{ kind: 'BOOKING', id: booking.id }} />
 
         <AppCard style={{ marginTop: spacing.lg }}>
           <Row label="From" value={formatDate(booking.requestedFromDate)} />

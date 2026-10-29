@@ -353,6 +353,104 @@ export interface BookingRequest {
   statusHistory: BookingStatusHistoryEntry[];
 }
 
+// ─── Live location (customer sharing + rental live driver) ──────────────────
+// kerayego-backend live-location contract (2026-10-29). The backend alone
+// decides when a sharing window is open; these only carry its answers.
+
+export type LocationShareTargetKind = 'TRIP_INQUIRY' | 'BOOKING';
+
+// One sharing window open right now for the signed-in customer: a carpool
+// seat (tripInquiryId) or a rental booking (bookingRequestId).
+export interface LocationShareTarget {
+  kind: LocationShareTargetKind;
+  id: string;
+  // The customer pressed Stop — the window is open but nothing is shared.
+  paused: boolean;
+  // trip.departureAt or booking.requestedFromDate (ISO).
+  pickupAt: string;
+  // "Lahore → Islamabad", or the rental vehicle's title.
+  label: string;
+  driverName: string | null;
+}
+
+// GET /users/me/location-sharing
+export interface MyLocationSharing {
+  // Every window open now, paused ones included.
+  targets: LocationShareTarget[];
+  // The earliest not-yet-open window opening within 24 h (ISO), else null —
+  // when to check again.
+  nextOpensAt: string | null;
+}
+
+// POST /trip-inquiries/:id/location, POST /booking-requests/:id/customer-location
+export interface CustomerLocationAck {
+  lastAcceptedAt: string | null;
+}
+
+// PATCH /trip-inquiries/:id/location-sharing,
+// PATCH /booking-requests/:id/customer-location-sharing
+export interface LocationSharingPauseState {
+  paused: boolean;
+}
+
+// GET /booking-requests/:id/live-driver (customer only).
+export interface BookingLiveDriver {
+  // status === IN_PROGRESS.
+  isLive: boolean;
+  bookingId: string;
+  status: BookingRequestStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  // The driver's newest fix — null unless live and one has arrived.
+  lastLocation: {
+    lat: number;
+    lng: number;
+    headingDeg: number | null;
+    speedKmh: number | null;
+    timestamp: string | null;
+  } | null;
+  driver: {
+    id: string;
+    name: string;
+    phone: string | null;
+    avatarUrl: string | null;
+    verificationStatus: string | null;
+  } | null;
+  vehicle: {
+    id: string;
+    title: string;
+    make: string;
+    model: string;
+    year: number;
+    images: { url: string; altText: string | null }[];
+  };
+  // When the driver marked the customer picked up (contract 2026-10-29).
+  // Absent from an older backend.
+  customerPickedUpAt?: string | null;
+}
+
+// GET /booking-requests/:id/live-route — the driver's newest 200 fixes, oldest first.
+export interface BookingLiveRouteFix {
+  id: string;
+  lat: number;
+  lng: number;
+  headingDeg: number | null;
+  speedKmh: number | null;
+  timestamp: string;
+}
+
+// GET /my/trips/:id/rider-locations (the trip's driver only): riders whose
+// window is open, not paused, with a position younger than 15 min.
+export interface TripRiderLocation {
+  tripInquiryId: string;
+  riderId: string;
+  riderName: string;
+  lat: number;
+  lng: number;
+  accuracyM: number | null;
+  at: string;
+}
+
 // ─── Saved Vehicles ─────────────────────────────────────────────────────────
 
 export interface SavedVehicle {

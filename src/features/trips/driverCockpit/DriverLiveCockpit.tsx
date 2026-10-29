@@ -25,6 +25,9 @@ import { RouteOverview } from './RouteOverview';
 import { LegPanel, type CockpitSheet } from './LegPanel';
 import { useLegRoute } from './useLegRoute';
 import { useAutoArrival } from './useAutoArrival';
+import { useRiderLocationPins } from './useRiderLocationPins';
+import { hasRidersAwaitingPickup } from './riderLocations';
+import { formatAgo } from '../../trip-inquiries/riderLiveTrip/riderTripState';
 
 interface DriverLiveCockpitProps {
   trip: TripDetail;
@@ -131,6 +134,21 @@ export function DriverLiveCockpit({
     mapFocus = { key: 'done', points: [driverPoint], follow: true };
   }
 
+  // Riders sharing their location until pickup — a pin each, polled while
+  // any rider still waits to be picked up.
+  const sharedRiders = useRiderLocationPins({
+    tripId: trip.id,
+    tripStatus: trip.status,
+    departureAt: trip.departureAt,
+    ridersAwaitingPickup: live && hasRidersAwaitingPickup(mergedRiders),
+  });
+  const riderPins = sharedRiders.riders.map((rider) => ({
+    id: rider.tripInquiryId,
+    lat: rider.lat,
+    lng: rider.lng,
+    label: `${rider.riderName} · ${formatAgo(sharedRiders.receivedAt - Date.parse(rider.at))}`,
+  }));
+
   const doneStopsCount = leg.stops.filter((stop) => stop.status === 'done' || stop.status === 'skipped').length;
   const totalStopsCount = leg.stops.length;
   const chatRider = chat.chatTarget ? mergedRiders.find((r) => r.id === chat.chatTarget?.id) : undefined;
@@ -188,6 +206,7 @@ export function DriverLiveCockpit({
             lastUpdateAt={lastLocationUpdateAt}
             routePolyline={navigating ? (legRoute.polyline ?? undefined) : undefined}
             focus={mapFocus}
+            riderPins={riderPins}
           />
         </View>
 

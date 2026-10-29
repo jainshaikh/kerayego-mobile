@@ -64,6 +64,18 @@ export interface LiveTripMapProps {
   // until the user pans the map themselves. A Re-center button then brings it
   // back.
   focus?: { points: { lat: number; lng: number }[]; key: string; follow: boolean };
+  // Additive, for the carpool driver's map only: riders sharing their
+  // location until pickup (GET /my/trips/:id/rider-locations), each a small
+  // person pin with a "name · 3 min ago" chip. Never moves the camera.
+  riderPins?: LiveRiderPin[];
+}
+
+export interface LiveRiderPin {
+  id: string;
+  lat: number;
+  lng: number;
+  // e.g. "Sara · 3 min ago".
+  label: string;
 }
 
 // --- Numbered stop pins (design spec section 3, "Map") ------------------
@@ -89,6 +101,12 @@ const DRIVER_PIN_SIZE = 30;
 const DRIVER_PIN_FILL = '#1A0F14';
 
 const DOT_ONLY_ANCHOR = { x: 0.5, y: 0.5 };
+// Rider pins (driver's map): the dot sits on the rider's position, its chip below.
+const RIDER_PIN_SIZE = 26;
+const RIDER_PIN_ANCHOR = {
+  x: 0.5,
+  y: RIDER_PIN_SIZE / 2 / (RIDER_PIN_SIZE + PIN_LABEL_GAP + PIN_LABEL_HEIGHT_ESTIMATE),
+};
 const SELECTED_PIN_ANCHOR = {
   x: 0.5,
   y: SELECTED_PIN_SIZE / 2 / (SELECTED_PIN_SIZE + PIN_LABEL_GAP + PIN_LABEL_HEIGHT_ESTIMATE),
@@ -150,6 +168,7 @@ export function LiveTripMap({
   onSelectStop,
   driverLabel,
   focus,
+  riderPins,
 }: LiveTripMapProps) {
   const { colors, spacing, radii, shadows } = useTheme();
   const mapRef = useRef<MapView>(null);
@@ -407,6 +426,44 @@ export function LiveTripMap({
             </Marker>
           );
         })}
+
+        {riderPins?.map((pin) => (
+          <Marker
+            key={`rider:${pin.id}`}
+            coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+            anchor={RIDER_PIN_ANCHOR}
+            zIndex={8}
+          >
+            <View style={styles.pinWithLabelWrap}>
+              <View
+                style={[
+                  styles.pinDot,
+                  {
+                    width: RIDER_PIN_SIZE,
+                    height: RIDER_PIN_SIZE,
+                    borderRadius: RIDER_PIN_SIZE / 2,
+                    backgroundColor: colors.info,
+                    borderWidth: 2,
+                    borderColor: colors.surface,
+                  },
+                ]}
+              >
+                <Ionicons name="person" size={14} color={colors.surface} />
+              </View>
+              <View
+                style={[
+                  styles.pinLabelChip,
+                  { marginTop: PIN_LABEL_GAP, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.chip },
+                  shadows.xs,
+                ]}
+              >
+                <AppText variant="label" numberOfLines={1}>
+                  {pin.label}
+                </AppText>
+              </View>
+            </View>
+          </Marker>
+        ))}
 
         {driverPosition && initialDriverCoordinate ? (
           <Marker

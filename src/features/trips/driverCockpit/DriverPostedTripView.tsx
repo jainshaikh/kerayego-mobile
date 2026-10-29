@@ -23,6 +23,7 @@ import type { DriverTripActions } from './useDriverTripActions';
 import { tripVehicle } from '../tripVehicle';
 import type { OfflineTripQueue } from '../offlineSync';
 import { OfflineQueueNotice } from '../components/OfflineQueueNotice';
+import { SharedRiderLocationsCard } from './SharedRiderLocationsCard';
 
 interface DriverPostedTripViewProps {
   trip: TripDetail;
@@ -96,6 +97,8 @@ export function DriverPostedTripView({
       {/* Also where a discarded queued Start is reported — the trip has
           rolled back to this pre-start view by then. */}
       <OfflineQueueNotice queue={offlineQueue} />
+
+      <SharedRiderLocationsCard trip={trip} inquiries={inquiries} />
 
       {trip.rejectionReason ? (
         <AppCard style={{ marginTop: spacing.lg }}>

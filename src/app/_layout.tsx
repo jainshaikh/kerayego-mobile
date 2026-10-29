@@ -18,6 +18,8 @@ import { activeRidePathname } from '../features/notifications/pushRouting';
 import { useMyActiveRide } from '../features/trips/queries';
 import { useGlobalOfflineQueueFlush } from '../features/trips/offlineSync';
 import { useDriverLocationReconcile } from '../features/liveRide/backgroundLocation/useDriverLocationReconcile';
+import { useCustomerLocationReconcile } from '../features/liveRide/backgroundLocation/useCustomerLocationReconcile';
+import { CustomerLocationPermissionSheet } from '../features/liveRide/components/CustomerLocationPermissionSheet';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 configureNotificationHandler();
@@ -79,6 +81,10 @@ function RootNavigator() {
   // Stops the driver's background location sharing once their ride is over
   // or the account on this device changes, from wherever they are.
   useDriverLocationReconcile(!isBootstrapping, signedInUserId);
+  // Shares a carpool rider's / rental customer's location with their driver
+  // while the backend says a window is open (until pickup), and stops it
+  // when it isn't — from wherever they are.
+  const customerLocationPrompt = useCustomerLocationReconcile(!isBootstrapping, signedInUserId);
 
   useEffect(() => {
     if (isReady) {
@@ -94,12 +100,15 @@ function RootNavigator() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(public)" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="account" />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(public)" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="account" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <CustomerLocationPermissionSheet prompt={customerLocationPrompt} />
+    </>
   );
 }
 

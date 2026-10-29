@@ -51,22 +51,26 @@ module.exports = {
         'expo-location',
         {
           locationWhenInUsePermission:
-            'Allow $(PRODUCT_NAME) to use your location to show nearby vehicles and carpools.',
-          // A driver's location keeps reaching their riders while a trip is in
-          // progress and the app is in the background but still running
-          // (src/features/liveRide/backgroundLocation) — with When-In-Use
-          // permission only (owner decision):
+            'Allow $(PRODUCT_NAME) to use your location to show nearby vehicles and carpools, and to share your location with your driver until pickup.',
+          // Two background location tasks, never both at once for one person
+          // (src/features/liveRide/backgroundLocation): a carpool driver's
+          // location keeps reaching their riders while a trip is in progress,
+          // and a carpool rider's / rental customer's location keeps reaching
+          // their driver while the backend's sharing window is open (until
+          // pickup) — both while the app is in the background but still
+          // running, with When-In-Use permission only (owner decisions):
           // - iOS: UIBackgroundModes 'location' (startLocationUpdatesAsync
           //   refuses to start without it), with the blue indicator.
           isIosBackgroundLocationEnabled: true,
           // - Android: FOREGROUND_SERVICE + FOREGROUND_SERVICE_LOCATION for the
-          //   "Trip in progress" notification's service (required to start it
-          //   on Android 14+; needs the Play Console foreground-service
-          //   declaration).
+          //   tasks' foreground services and their notifications ("Trip in
+          //   progress" for the driver, "Sharing your location" for the
+          //   customer) — required to start them on Android 14+; needs the
+          //   Play Console foreground-service declaration.
           isAndroidForegroundServiceEnabled: true,
           // - Never ACCESS_BACKGROUND_LOCATION ("Allow all the time"): the
-          //   foreground service doesn't need it, and tracking stops when the
-          //   app is swiped away.
+          //   foreground services don't need it, and sharing stops when the
+          //   app is swiped away (both tasks use killServiceOnDestroy).
           isAndroidBackgroundLocationEnabled: false,
         },
       ],

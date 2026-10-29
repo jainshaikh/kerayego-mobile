@@ -10,6 +10,10 @@ import {
   setDriverLocationSessionUser,
   stopDriverLocationSharing,
 } from '../features/liveRide/backgroundLocation/driverLocationSharing';
+import {
+  setCustomerLocationSessionUser,
+  stopCustomerLocationSharing,
+} from '../features/liveRide/backgroundLocation/customerLocationSharing';
 import { setOfflineQueueOwner } from '../features/trips/offlineSync';
 import {
   invalidateDevicePushToken,
@@ -59,6 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // account). Best-effort, not awaited: it only talks to the OS.
       setDriverLocationSessionUser(null);
       void stopDriverLocationSharing('signed_out');
+      // The same for the customer's "sharing your location with your
+      // driver" task.
+      setCustomerLocationSessionUser(null);
+      void stopCustomerLocationSharing('signed_out');
       setAccessToken(null);
       // The ride socket stays authenticated as whoever it handshook as until
       // it's closed — tear it down before anyone else can sign in here.
@@ -99,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const me = await usersApi.getMe();
         setOfflineQueueOwner(me.id);
         setDriverLocationSessionUser(me.id);
+        setCustomerLocationSessionUser(me.id);
         setUser(me);
         registerPushToken();
       } catch {
@@ -117,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(result.accessToken);
     setOfflineQueueOwner(result.user.id);
     setDriverLocationSessionUser(result.user.id);
+    setCustomerLocationSessionUser(result.user.id);
     if (result.refreshToken) {
       await setRefreshToken(result.refreshToken);
     }

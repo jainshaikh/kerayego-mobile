@@ -7,6 +7,7 @@ import {
   type UpdateTripPayload,
 } from '../../api/trips.api';
 import { normalizeApiError } from '../../api/errors';
+import { RIDER_LOCATIONS_POLL_MS } from './driverCockpit/riderLocations';
 
 export function useInfiniteTrips(filters: Omit<TripFilters, 'page'>) {
   return useInfiniteQuery({
@@ -156,5 +157,18 @@ export function useMyActiveRide(enabled = true) {
     queryFn: () => tripsApi.getMyActiveRide(),
     enabled,
     refetchInterval: enabled ? 20_000 : false,
+  });
+}
+
+// Riders sharing their location with this trip's driver — polled every 10 s
+// while `enabled` (riders still wait for pickup inside their window, and the
+// app is in the foreground; see driverCockpit/useRiderLocationPins).
+export function useMyTripRiderLocations(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['myTripRiderLocations', id],
+    queryFn: () => tripsApi.getRiderLocations(id as string),
+    enabled: !!id && enabled,
+    staleTime: 0,
+    refetchInterval: enabled ? RIDER_LOCATIONS_POLL_MS : false,
   });
 }

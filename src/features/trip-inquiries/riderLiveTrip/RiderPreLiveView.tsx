@@ -8,6 +8,7 @@ import { TripInquiryStatus } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
 import { formatTripDateTime, tripTimeZoneSuffix } from '../../../utils/tripDateTime';
 import { ChatModalSheet } from '../../liveRide/components/ChatModalSheet';
+import { CustomerLocationSharingCard } from '../../liveRide/components/CustomerLocationSharingCard';
 import type { ServerClock } from '../../trips/driverCockpit/noShow';
 import type { OfflineTripQueue } from '../../trips/offlineSync';
 import { OfflineQueueNotice } from '../../trips/components/OfflineQueueNotice';
@@ -74,6 +75,10 @@ export function RiderPreLiveView({
         </AppText>
 
         <OfflineQueueNotice queue={offlineQueue} />
+
+        {/* Only while the backend says this seat's sharing window is open
+            (30 min before departure until pickup) — renders nothing otherwise. */}
+        <CustomerLocationSharingCard target={{ kind: 'TRIP_INQUIRY', id: inquiry.id }} />
 
         {stage === 'upcoming' ? (
           <PreTripConfirmationCard inquiry={inquiry} serverClock={serverClock} />

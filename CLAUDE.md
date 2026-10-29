@@ -27,13 +27,12 @@ Expo ~57.0.12 · Expo Router ~57.0.12 (file-based routing) · React 19.2.3 · Re
 Architecture + Hermes enabled · TanStack React Query v5 · Axios · Zod v4 + React Hook Form ·
 `socket.io-client` 4.8.1 · `react-native-maps` · `react-native-keyboard-controller` (all keyboard
 avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help; see `docs/ARCHITECTURE.md`
-§8) · `expo-location` + `expo-task-manager` (driver's background location) · `expo-notifications` ·
+§8) · `expo-location` + `expo-task-manager` (driver's and customer's background location) · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
 (present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 35 `*.test.ts(x)` files under `src/`, never under
+Jest** with the `jest-expo` preset (`npm test`): 42 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
-**The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; the other 34
-files pass when run by name.
+**The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; run the other files by name.
 
 ## Project structure
 
@@ -46,7 +45,7 @@ src/
     liveRide/           socket.ts (shared Socket.IO client), LiveTripMap, ChatPanel, ChatModalSheet,
                         rideVisuals.ts, geo.ts, openMapsNavigation.ts, useTripRoomPresence.ts,
                         useBlockBackButtonWhileActive.ts (shared driver+rider live-ride pieces);
-                        backgroundLocation/ (driver's background location task, see below)
+                        backgroundLocation/ (driver's and customer's background location tasks, see below)
     location/           LocationField, LocationMapSheet (centre-pin map picker), usePlaceSearch.ts,
                         activeAutocomplete.ts
     trips/              offlineSync.ts (offline action queue + shared runTripAction) + trip components;
@@ -55,7 +54,8 @@ src/
     media/              useImagePicker.ts
     trip-inquiries/     queries.ts; riderLiveTrip/ (rider live-view hooks/components, see docs/ARCHITECTURE.md §10.1)
   storage/              secure-storage.ts (expo-secure-store), offline-trip-queue.ts (AsyncStorage),
-                        active-driver-trip.ts (AsyncStorage: which trip the background task reports for)
+                        active-driver-trip.ts / active-customer-share.ts (AsyncStorage: what each
+                        background location task reports for)
   components/ui/        hand-rolled design system (AppButton, AppInput, AppScreen, StatusBadge, ...)
   components/maps/      NearMeControl, ResultsMap (search-results map, unrelated to LiveTripMap)
   theme/                tokens.ts + index.ts (useTheme) — "Sunset Coral" palette mirrored from web
@@ -113,7 +113,9 @@ against `POST`/`DELETE /device-tokens`, tied to login/logout.
   second cached-user blob is written to but never read anywhere (dead storage). `AsyncStorage` backs the
   offline trip-action queue (`storage/offline-trip-queue.ts`), a single unscoped FIFO list filtered by
   `tripId` only at read time, with no TTL/expiry. AsyncStorage also holds `liveRide.activeDriverTrip`
-  (`storage/active-driver-trip.ts`), the trip and driver the background location task is sharing for.
+  (`storage/active-driver-trip.ts`), the trip and driver the background location task is sharing for, and
+  `liveRide.activeCustomerShare` (`storage/active-customer-share.ts`), the seat/booking and customer the
+  customer location task is sharing for.
 - **Module-level singletons** (not React state): the shared Socket.IO connection (`features/liveRide/socket.ts`),
   and `activeAutocomplete.ts` (cross-field autocomplete-dropdown exclusivity, mirroring the same pattern
   documented on `kerayego-web`).
@@ -165,7 +167,14 @@ blue indicator; Android foreground service with a "Trip in progress" notificatio
 app is swiped away**. The task is registered from the custom entry `index.js` so it exists even when the
 OS starts the app without UI; binaries without `expo-task-manager` have no background sharing, and the
 cockpit says so. It stops on trip end, logout, the active ride going away, or a 404/409 from the
-location endpoint. Details: `docs/ARCHITECTURE.md` §12. **Chat** (`ChatModalSheet`/`ChatPanel`) rides the same socket, optimistic-send-then-reconcile
+location endpoint. **Customer sharing** (carpool riders and rental customers): a second task,
+`kerayego.customer-location`, posts the customer's position to their driver every ~10 s in the foreground
+and background while the backend says a window is open (until pickup); `useCustomerLocationReconcile`
+(root layout) polls `GET /users/me/location-sharing` and starts it from the foreground only, after a short
+permission explanation sheet; the rider screens and rental booking detail show a "Sharing your location
+with your driver" card with Stop/Resume. Never both tasks at once for one person. The rental booking
+detail also shows the assigned driver live (`/live-driver`, polled 10 s), and the driver cockpit shows
+riders' shared positions. Details: `docs/ARCHITECTURE.md` §12. **Chat** (`ChatModalSheet`/`ChatPanel`) rides the same socket, optimistic-send-then-reconcile
 by client-generated UUID, with typing throttling and read receipts.
 
 Google Places/geocoding calls are **proxied through the backend** (`/geo/*`), not called directly from

@@ -1,5 +1,11 @@
 import apiClient from './client';
-import type { ApiResponse, PaginationMeta, PaginationMetaExtended, TripDetail } from '../types/api.types';
+import type {
+  ApiResponse,
+  PaginationMeta,
+  PaginationMetaExtended,
+  TripDetail,
+  TripRiderLocation,
+} from '../types/api.types';
 import type { PickupSource, TripEventType } from '../types/enums';
 
 export interface TripFilters {
@@ -242,6 +248,13 @@ export const tripsApi = {
   recordDriverLocations: async (id: string, locations: DriverLocationFix[]) => {
     const res = await apiClient.post<ApiResponse<{ accepted: number }>>(`/my/trips/${id}/location`, { locations });
     return res.data.data;
+  },
+
+  // Riders sharing their location with this trip's driver (window open, not
+  // paused, position under 15 min old). The trip's poster only, else 404.
+  getRiderLocations: async (id: string): Promise<TripRiderLocation[]> => {
+    const res = await apiClient.get<ApiResponse<{ riders: TripRiderLocation[] }>>(`/my/trips/${id}/rider-locations`);
+    return res.data.data.riders;
   },
 
   getMyActiveRide: async (): Promise<MyActiveRide> => {

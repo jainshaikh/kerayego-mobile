@@ -8,6 +8,7 @@ import { TripInquiryStatus } from '../../../types/enums';
 import { titleCase } from '../../../utils/format';
 import { LiveTripMap, type LiveTripStop } from '../../liveRide/components/LiveTripMap';
 import { ChatModalSheet } from '../../liveRide/components/ChatModalSheet';
+import { CustomerLocationSharingCard } from '../../liveRide/components/CustomerLocationSharingCard';
 import { mapsNavigationUrl, openMapsNavigation } from '../../liveRide/openMapsNavigation';
 import { formatDistanceShort } from '../../liveRide/geo';
 import type { ServerClock } from '../../trips/driverCockpit/noShow';
@@ -206,6 +207,9 @@ export function RiderLiveView({
         </View>
 
         <OfflineQueueNotice queue={offlineQueue} variant="bar" />
+        {/* Until pickup: sharing the rider's location with the driver
+            (nothing once picked up — the window closes then). */}
+        <CustomerLocationSharingCard target={{ kind: 'TRIP_INQUIRY', id: inquiry.id }} variant="bar" />
 
         {/* Map section: pinned, plus its bottom-anchored overlay banner. */}
         <View style={{ height: 340, marginHorizontal: spacing.lg, marginTop: spacing.lg, borderRadius: radii.card, overflow: 'hidden' }}>

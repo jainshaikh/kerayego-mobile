@@ -92,6 +92,12 @@ const serverStoppedTrips = new Set<string>();
 let lifecycle = 0;
 let startInFlight: { tripId: string; promise: Promise<void> } | null = null;
 
+// Run before the task registers: the customer's location task
+// (customerLocationSharing.ts) stops itself here, so one person never has
+// both running. A registration rather than an import — that module already
+// imports this one.
+let beforeDriverStart: (() => Promise<void>) | null = null;
+
 // Fixes delivered in the background and not posted yet, oldest first.
 let pending: DriverLocationFix[] = [];
 // Earliest time (epoch ms) the next POST may go out.
@@ -123,6 +129,11 @@ export function setDriverLocationSessionUser(userId: string | null): void {
   sessionUserId = userId;
   // The previous account's refused trips say nothing about the next one's.
   serverStoppedTrips.clear();
+}
+
+/** customerLocationSharing.ts: what to do (stop itself) before the driver task registers. */
+export function setBeforeDriverLocationStart(hook: (() => Promise<void>) | null): void {
+  beforeDriverStart = hook;
 }
 
 /** Whether the server ended sharing for this trip this run (404/409, or no longer the active ride). */
@@ -234,6 +245,9 @@ async function startSharing(tripId: string, userId: string): Promise<void> {
     // The record first, the registration second: a fix delivered the moment
     // the task is registered must already know its trip.
     await writeActiveDriverTrip({ tripId, userId, startedAt });
+    // With the record written (and the status 'starting'), the customer task
+    // won't start again; stop one that's running.
+    await beforeDriverStart?.().catch(() => undefined);
     if (run !== lifecycle) {
       await clearActiveDriverTrip();
       return;
