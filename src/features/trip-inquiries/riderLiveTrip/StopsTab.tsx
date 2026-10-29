@@ -34,8 +34,9 @@ interface StopsTabProps {
   dropoffQueued: boolean;
   etaMinutes: number | null;
   driverDistanceKm: number | null;
-  vehicleName: string;
-  vehiclePlate: string;
+  // null on a return trip, whose fleet car the rider's request doesn't carry.
+  vehicleName: string | null;
+  vehiclePlate: string | null;
   rideActionAvailability: RideActionAvailability;
   actioningType: RiderEventType | null;
   onArrived: () => void;
@@ -135,7 +136,7 @@ export function StopsTab({
               style={{ marginTop: spacing.sm }}
             />
             <AppText muted variant="caption" style={{ marginTop: spacing.sm }}>
-              Look for {vehicleName}, {vehiclePlate}.
+              {vehicleName ? `Look for ${vehicleName}${vehiclePlate ? `, ${vehiclePlate}` : ''}.` : 'Look for your driver.'}
             </AppText>
           </AppCard>
         ) : waiting ? (
@@ -155,7 +156,7 @@ export function StopsTab({
               ) : null}
             </View>
             <AppText muted variant="caption" style={{ marginTop: spacing.sm }}>
-              Updated just now · {vehicleName}, {vehiclePlate}.
+              Updated just now{vehicleName ? ` · ${vehicleName}${vehiclePlate ? `, ${vehiclePlate}` : ''}` : ''}.
             </AppText>
           </AppCard>
         ) : null}

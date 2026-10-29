@@ -2,17 +2,16 @@ import { View } from 'react-native';
 import { Image } from 'expo-image';
 import { AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import type { TripInquiryVehicle } from '../../../api/trip-inquiries.api';
 import { titleCase } from '../../../utils/format';
-import { vehicleDisplayName } from './tripDisplay';
+import type { RiderTripVehicle } from './tripDisplay';
 
-// The car the rider is looking for: cover photo (when the driver added one),
-// year/make/model, then colour and plate — everything needed to spot it at
-// the pickup point.
-export function VehicleSummary({ vehicle }: { vehicle: TripInquiryVehicle }) {
+// The car the rider is looking for: cover photo (when there is one),
+// year/make/model (a fleet car's listing title on a return trip), then colour
+// and plate when known, and on a return trip which business operates it —
+// everything needed to spot it at the pickup point.
+export function VehicleSummary({ vehicle }: { vehicle: RiderTripVehicle }) {
   const { colors, spacing, radii } = useTheme();
-  const cover = vehicle.images[0];
-  const name = vehicleDisplayName(vehicle);
+  const { cover } = vehicle;
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
@@ -22,22 +21,29 @@ export function VehicleSummary({ vehicle }: { vehicle: TripInquiryVehicle }) {
             source={{ uri: cover.url }}
             style={{ width: '100%', height: '100%' }}
             contentFit="cover"
-            accessibilityLabel={cover.altText ?? name}
+            accessibilityLabel={cover.altText ?? vehicle.name}
           />
         </View>
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         <AppText variant="label" numberOfLines={1}>
-          {name}
+          {vehicle.name}
         </AppText>
         {vehicle.color ? (
           <AppText muted variant="caption" numberOfLines={1}>
             {titleCase(vehicle.color)}
           </AppText>
         ) : null}
-        <AppText variant="caption" style={{ marginTop: 2 }}>
-          Plate {vehicle.plateNumber}
-        </AppText>
+        {vehicle.plateNumber ? (
+          <AppText variant="caption" style={{ marginTop: 2 }}>
+            Plate {vehicle.plateNumber}
+          </AppText>
+        ) : null}
+        {vehicle.operatedBy ? (
+          <AppText muted variant="caption" numberOfLines={1} style={{ marginTop: 2 }}>
+            Operated by {vehicle.operatedBy}
+          </AppText>
+        ) : null}
       </View>
     </View>
   );

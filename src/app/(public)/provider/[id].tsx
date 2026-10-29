@@ -1,11 +1,8 @@
 import { FlatList, Pressable, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { usePublicProvider } from '../../../features/providers/queries';
-import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
-import { ReviewsList } from '../../../components/reviews/ReviewsList';
 import { AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
@@ -18,12 +15,9 @@ export default function ProviderProfileScreen() {
   const { id: slug } = useLocalSearchParams<{ id: string }>();
   const { colors, spacing, radii } = useTheme();
   const { data: provider, isLoading, isError, refetch } = usePublicProvider(slug);
-  const queryClient = useQueryClient();
-  // Reviews and rating badges on this screen are their own queries, owned by
-  // child components — invalidating ['reviews'] refetches the mounted ones.
-  const refresh = usePullToRefresh(() =>
-    Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['reviews'] })]),
-  );
+  // No business rating or reviews here (A18): customers rate the car and the
+  // driver, never the business.
+  const refresh = usePullToRefresh(refetch);
 
   if (isLoading) return <LoadingState label="Loading provider..." />;
   if (isError || !provider) {
@@ -61,9 +55,6 @@ export default function ProviderProfileScreen() {
               <View style={{ flex: 1 }}>
                 <AppText variant="title">{provider.businessName}</AppText>
                 {provider.isFeatured ? <StatusBadge label="Featured" tone="info" /> : null}
-                <View style={{ marginTop: spacing.xs }}>
-                  <RatingSummaryBadge subjectType="PROVIDER" subjectId={provider.id} size="sm" />
-                </View>
               </View>
             </View>
 
@@ -117,11 +108,6 @@ export default function ProviderProfileScreen() {
           </Pressable>
         )}
         ListEmptyComponent={<AppText muted>No published vehicles yet.</AppText>}
-        ListFooterComponent={
-          <AppCard style={{ marginTop: spacing.lg }}>
-            <ReviewsList subjectType="PROVIDER" subjectId={provider.id} title="Reviews" />
-          </AppCard>
-        }
       />
     </AppScreen>
   );

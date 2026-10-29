@@ -19,7 +19,7 @@ import type { RiderTripActions } from './useRiderTripActions';
 import type { RideActionAvailability } from './rideActionAvailability';
 import { deriveRiderRidePhase, liveRideCopy } from './riderTripState';
 import { hasCoordinates } from './routeStops';
-import { driverCallNumber } from './tripDisplay';
+import { driverCallNumber, riderTripVehicle } from './tripDisplay';
 import { DriverArrivedAgo } from './DriverArrivedAgo';
 import { RiderConfirmSheet } from './RiderConfirmSheet';
 import { StopsTab } from './StopsTab';
@@ -97,8 +97,11 @@ export function RiderLiveView({
 
   const { trip } = inquiry;
   const driverName = trip.postedBy.name;
-  const vehicleName = `${titleCase(trip.userVehicle.make)} ${titleCase(trip.userVehicle.model)}`;
-  const vehiclePlate = trip.userVehicle.plateNumber;
+  // The driver's own car, or on a return trip the business's fleet car
+  // (no plate then) and who operates it.
+  const vehicle = riderTripVehicle(trip);
+  const vehicleName = vehicle?.shortName ?? null;
+  const vehiclePlate = vehicle?.plateNumber ?? null;
 
   const pickupDistanceLabel =
     route.pickupDistanceM !== null ? `${formatDistanceShort(route.pickupDistanceM / 1000)} from you` : null;
@@ -277,7 +280,7 @@ export function RiderLiveView({
               driverBadge={copy.driverBadge}
               callNumber={driverCallNumber(trip)}
               whatsappNumber={trip.contactNumber}
-              vehicle={trip.userVehicle}
+              vehicle={vehicle}
               onOpenChat={onOpenChat}
             />
           </View>
@@ -328,8 +331,8 @@ export function RiderLiveView({
         onClose={onCloseChat}
         tripInquiryId={inquiry.id}
         riderName={driverName}
-        pickupLabel={vehicleName}
-        dropoffLabel={vehiclePlate}
+        pickupLabel={vehicleName ?? trip.originCity}
+        dropoffLabel={vehiclePlate ?? trip.destinationCity}
       />
     </>
   );

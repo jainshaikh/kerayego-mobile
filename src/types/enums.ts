@@ -11,6 +11,8 @@ export enum UserStatus {
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED',
   PENDING_VERIFICATION = 'PENDING_VERIFICATION',
+  PENDING_DELETION = 'PENDING_DELETION',
+  DELETED = 'DELETED',
 }
 
 export enum ProviderStatus {
@@ -27,12 +29,14 @@ export enum VehicleStatus {
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
   ARCHIVED = 'ARCHIVED',
+  SUSPENDED = 'SUSPENDED',
 }
 
 export enum BookingRequestStatus {
   PENDING = 'PENDING',
   CONTACTED = 'CONTACTED',
   ACCEPTED = 'ACCEPTED',
+  IN_PROGRESS = 'IN_PROGRESS',
   REJECTED = 'REJECTED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
@@ -149,6 +153,7 @@ export const bookingStatusMeta: Record<
   [BookingRequestStatus.PENDING]: { label: 'Pending', tone: 'warning' },
   [BookingRequestStatus.CONTACTED]: { label: 'Contacted', tone: 'accent' },
   [BookingRequestStatus.ACCEPTED]: { label: 'Accepted', tone: 'success' },
+  [BookingRequestStatus.IN_PROGRESS]: { label: 'In Progress', tone: 'info' },
   [BookingRequestStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
   [BookingRequestStatus.CANCELLED]: { label: 'Cancelled', tone: 'neutral' },
   [BookingRequestStatus.COMPLETED]: { label: 'Completed', tone: 'complete' },
@@ -163,7 +168,17 @@ export const vehicleStatusMeta: Record<
   [VehicleStatus.APPROVED]: { label: 'Approved', tone: 'success' },
   [VehicleStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
   [VehicleStatus.ARCHIVED]: { label: 'Archived', tone: 'neutral' },
+  [VehicleStatus.SUSPENDED]: { label: 'Suspended', tone: 'danger' },
 };
+
+/**
+ * Display meta for a booking status, safe for a status this build doesn't
+ * know yet (the backend adds statuses over time) — it shows the raw value
+ * instead of crashing.
+ */
+export function bookingStatusDisplay(status: string): { label: string; tone: StatusTone } {
+  return bookingStatusMeta[status as BookingRequestStatus] ?? { label: status, tone: 'neutral' };
+}
 
 // Backend BOOKING_TRANSITIONS (common/enums/booking-status.enum.ts) — mirrored here
 // so the mobile UI only ever shows actions the backend will actually accept.
@@ -187,11 +202,16 @@ export const BOOKING_TRANSITIONS: Record<
     nextStates: [BookingRequestStatus.ACCEPTED, BookingRequestStatus.REJECTED],
   },
   [BookingRequestStatus.ACCEPTED]: {
-    allowedBy: ['ADMIN'],
+    allowedBy: ['PROVIDER', 'ADMIN'],
     nextStates: [
+      BookingRequestStatus.IN_PROGRESS,
       BookingRequestStatus.COMPLETED,
       BookingRequestStatus.CANCELLED,
     ],
+  },
+  [BookingRequestStatus.IN_PROGRESS]: {
+    allowedBy: ['PROVIDER', 'ADMIN'],
+    nextStates: [BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
   },
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.CANCELLED]: { allowedBy: [], nextStates: [] },
@@ -310,10 +330,30 @@ export function tripInquiryRiderActions(
   return [];
 }
 
+// The trip's driver/poster: accept or decline a PENDING request, and cancel
+// an ACCEPTED (booked) seat (A49 — the backend lets the poster or their
+// business cancel a confirmed seat, with the same trip-status gate and
+// departure-time 400 as the rider's cancel).
 export function tripInquiryPosterActions(
   status: TripInquiryStatus,
+  tripStatus?: TripStatus,
 ): TripInquiryStatus[] {
-  return status === TripInquiryStatus.PENDING
-    ? [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED]
-    : [];
+  if (status === TripInquiryStatus.PENDING) return [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED];
+  if (status === TripInquiryStatus.ACCEPTED) {
+    if (tripStatus && SEAT_CANCEL_BLOCKED_TRIP_STATUSES.includes(tripStatus)) return [];
+    return [TripInquiryStatus.CANCELLED];
+  }
+  return [];
+}
+
+// Seat requests that block cancelling the trip (A49): TripsService.cancel
+// refuses while any request is still PENDING or ACCEPTED.
+const TRIP_CANCEL_BLOCKING_INQUIRY_STATUSES: readonly TripInquiryStatus[] = [
+  TripInquiryStatus.PENDING,
+  TripInquiryStatus.ACCEPTED,
+];
+
+/** How many of a trip's seat requests must be declined or cancelled before the trip can be. */
+export function openSeatRequestCount(inquiries: readonly { status: TripInquiryStatus }[]): number {
+  return inquiries.filter((inquiry) => TRIP_CANCEL_BLOCKING_INQUIRY_STATUSES.includes(inquiry.status)).length;
 }

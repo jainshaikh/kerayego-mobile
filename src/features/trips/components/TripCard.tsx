@@ -5,6 +5,7 @@ import { useTheme } from '../../../theme';
 import { AppCard, AppText } from '../../../components/ui';
 import { formatPrice, titleCase } from '../../../utils/format';
 import type { TripCard as TripCardData } from '../../../types/api.types';
+import { tripVehicle } from '../tripVehicle';
 
 function formatDepartureDateTime(iso: string): string {
   const date = new Date(iso);
@@ -13,7 +14,9 @@ function formatDepartureDateTime(iso: string): string {
 
 export function TripCard({ trip }: { trip: TripCardData }) {
   const { colors, spacing } = useTheme();
-  const poster = trip.userVehicle.images[0];
+  // A return trip runs in a business's fleet car — see tripVehicle.
+  const vehicle = tripVehicle(trip);
+  const poster = vehicle?.images[0];
 
   return (
     <Pressable onPress={() => router.push(`/trip/${trip.id}`)} accessibilityRole="button">
@@ -25,7 +28,7 @@ export function TripCard({ trip }: { trip: TripCardData }) {
               style={{ width: '100%', height: '100%' }}
               contentFit="cover"
               transition={150}
-              accessibilityLabel={poster.altText ?? `${trip.userVehicle.make} ${trip.userVehicle.model}`}
+              accessibilityLabel={poster.altText ?? vehicle?.name}
             />
           </View>
         ) : null}
@@ -45,8 +48,8 @@ export function TripCard({ trip }: { trip: TripCardData }) {
           </AppText>
 
           <AppText muted variant="caption" style={{ marginTop: 2 }} numberOfLines={1}>
-            {titleCase(trip.userVehicle.make)} {titleCase(trip.userVehicle.model)}
-            {trip.userVehicle.color ? ` · ${titleCase(trip.userVehicle.color)}` : ''} · {trip.postedBy.name}
+            {vehicle ? `${vehicle.name}${vehicle.color ? ` · ${titleCase(vehicle.color)}` : ''} · ` : ''}
+            {trip.providerProfile?.businessName ?? trip.postedBy.name}
           </AppText>
         </View>
       </AppCard>

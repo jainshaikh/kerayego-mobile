@@ -4,6 +4,7 @@ import {
   type CreateReviewPayload,
   type ReviewSubjectType,
 } from '../../api/reviews.api';
+import { normalizeApiError } from '../../api/errors';
 
 export function usePublicReviews(subjectType: ReviewSubjectType, subjectId: string | undefined, page = 1) {
   return useQuery({
@@ -35,6 +36,13 @@ export function useCreateReview() {
     mutationFn: (data: CreateReviewPayload) => reviewsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reviews'] });
+    },
+    // 409 "You have already rated this" (e.g. rated from another device) —
+    // refetch so the row leaves the "to rate" list.
+    onError: (error) => {
+      if (normalizeApiError(error).kind === 'conflict') {
+        queryClient.invalidateQueries({ queryKey: ['reviews', 'my', 'eligible'] });
+      }
     },
   });
 }

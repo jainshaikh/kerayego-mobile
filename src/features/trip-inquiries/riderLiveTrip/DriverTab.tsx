@@ -1,11 +1,11 @@
 import { ScrollView, View } from 'react-native';
 import { AppCard, AppText, StatusBadge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import type { TripInquiryVehicle } from '../../../api/trip-inquiries.api';
 import { RideAvatar } from '../../liveRide/components/RideAvatar';
 import { DriverContactActions } from './DriverContactActions';
 import type { BadgeCopy } from './riderTripState';
 import { VehicleSummary } from './VehicleSummary';
+import type { RiderTripVehicle } from './tripDisplay';
 
 interface DriverTabProps {
   driverName: string;
@@ -14,7 +14,9 @@ interface DriverTabProps {
   // driverCallNumber(trip): the driver's own phone, else the listing's number.
   callNumber: string | null;
   whatsappNumber: string | null;
-  vehicle: TripInquiryVehicle;
+  // riderTripVehicle(trip): the driver's own car, or on a return trip the
+  // business's fleet car and who operates it. null when the backend sent none.
+  vehicle: RiderTripVehicle | null;
   onOpenChat: () => void;
 }
 
@@ -42,12 +44,14 @@ export function DriverTab({ driverName, driverBadge, callNumber, whatsappNumber,
           </View>
         </AppCard>
 
-        <AppCard>
-          <AppText variant="label" style={{ marginBottom: spacing.md }}>
-            Vehicle
-          </AppText>
-          <VehicleSummary vehicle={vehicle} />
-        </AppCard>
+        {vehicle ? (
+          <AppCard>
+            <AppText variant="label" style={{ marginBottom: spacing.md }}>
+              Vehicle
+            </AppText>
+            <VehicleSummary vehicle={vehicle} />
+          </AppCard>
+        ) : null}
       </View>
     </ScrollView>
   );

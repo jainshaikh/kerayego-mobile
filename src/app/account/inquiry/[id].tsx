@@ -6,7 +6,7 @@ import { useBookingRequest, useUpdateBookingStatus } from '../../../features/boo
 import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
-import { bookingStatusMeta, userBookingActions, BookingRequestStatus } from '../../../types/enums';
+import { bookingStatusDisplay, userBookingActions, BookingRequestStatus } from '../../../types/enums';
 import { formatDate, formatPrice } from '../../../utils/format';
 import { normalizeApiError } from '../../../api/errors';
 
@@ -40,7 +40,7 @@ export default function MyInquiryDetailScreen() {
           <AppText variant="title" style={{ flex: 1, marginRight: spacing.md }}>
             {booking.vehicle.title}
           </AppText>
-          <StatusBadge label={bookingStatusMeta[booking.status].label} tone={bookingStatusMeta[booking.status].tone} />
+          <StatusBadge label={bookingStatusDisplay(booking.status).label} tone={bookingStatusDisplay(booking.status).tone} />
         </View>
         <AppText muted style={{ marginTop: spacing.xs }}>
           {booking.providerProfile.businessName}
@@ -70,7 +70,7 @@ export default function MyInquiryDetailScreen() {
             {booking.statusHistory.map((entry) => (
               <View key={entry.id} style={{ marginBottom: spacing.sm }}>
                 <AppText variant="caption">
-                  {bookingStatusMeta[entry.oldStatus].label} → {bookingStatusMeta[entry.newStatus].label}
+                  {bookingStatusDisplay(entry.oldStatus).label} → {bookingStatusDisplay(entry.newStatus).label}
                 </AppText>
                 <AppText muted variant="caption">
                   {formatDate(entry.createdAt)}

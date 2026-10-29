@@ -27,11 +27,13 @@ Expo ~57.0.12 · Expo Router ~57.0.12 (file-based routing) · React 19.2.3 · Re
 Architecture + Hermes enabled · TanStack React Query v5 · Axios · Zod v4 + React Hook Form ·
 `socket.io-client` 4.8.1 · `react-native-maps` · `react-native-keyboard-controller` (all keyboard
 avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help; see `docs/ARCHITECTURE.md`
-§8) · `expo-location` · `expo-notifications` ·
+§8) · `expo-location` + `expo-task-manager` (driver's background location) · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
-(present as dependencies; not used anywhere in the audited design-system/component files). **No test
-framework of any kind is installed** — no test script, no Jest/Detox/Maestro config, zero
-`*.test.*`/`*.spec.*` files outside `node_modules`.
+(present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
+Jest** with the `jest-expo` preset (`npm test`): 35 `*.test.ts(x)` files under `src/`, never under
+`src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
+**The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; the other 34
+files pass when run by name.
 
 ## Project structure
 
@@ -43,7 +45,8 @@ src/
   features/             one folder per domain: queries.ts (React Query hooks) + components/
     liveRide/           socket.ts (shared Socket.IO client), LiveTripMap, ChatPanel, ChatModalSheet,
                         rideVisuals.ts, geo.ts, openMapsNavigation.ts, useTripRoomPresence.ts,
-                        useBlockBackButtonWhileActive.ts (shared driver+rider live-ride pieces)
+                        useBlockBackButtonWhileActive.ts (shared driver+rider live-ride pieces);
+                        backgroundLocation/ (driver's background location task, see below)
     location/           LocationField, LocationMapSheet (centre-pin map picker), usePlaceSearch.ts,
                         activeAutocomplete.ts
     trips/              offlineSync.ts (offline action queue + shared runTripAction) + trip components;
@@ -51,7 +54,8 @@ src/
     notifications/      pushToken.ts
     media/              useImagePicker.ts
     trip-inquiries/     queries.ts; riderLiveTrip/ (rider live-view hooks/components, see docs/ARCHITECTURE.md §10.1)
-  storage/              secure-storage.ts (expo-secure-store), offline-trip-queue.ts (AsyncStorage)
+  storage/              secure-storage.ts (expo-secure-store), offline-trip-queue.ts (AsyncStorage),
+                        active-driver-trip.ts (AsyncStorage: which trip the background task reports for)
   components/ui/        hand-rolled design system (AppButton, AppInput, AppScreen, StatusBadge, ...)
   components/maps/      NearMeControl, ResultsMap (search-results map, unrelated to LiveTripMap)
   theme/                tokens.ts + index.ts (useTheme) — "Sunset Coral" palette mirrored from web
@@ -108,7 +112,8 @@ against `POST`/`DELETE /device-tokens`, tied to login/logout.
 - **Persistent storage**: `expo-secure-store` for the refresh token (`storage/secure-storage.ts`) — a
   second cached-user blob is written to but never read anywhere (dead storage). `AsyncStorage` backs the
   offline trip-action queue (`storage/offline-trip-queue.ts`), a single unscoped FIFO list filtered by
-  `tripId` only at read time, with no TTL/expiry.
+  `tripId` only at read time, with no TTL/expiry. AsyncStorage also holds `liveRide.activeDriverTrip`
+  (`storage/active-driver-trip.ts`), the trip and driver the background location task is sharing for.
 - **Module-level singletons** (not React state): the shared Socket.IO connection (`features/liveRide/socket.ts`),
   and `activeAutocomplete.ts` (cross-field autocomplete-dropdown exclusivity, mirroring the same pattern
   documented on `kerayego-web`).
@@ -147,15 +152,20 @@ Full public search → post a trip (gated on an `APPROVED` personal vehicle) →
 execution**, which web has no equivalent of at all: `account/my-trips/[id].tsx` is the driver's cockpit
 (Start trip, tabbed Stops/Riders/Details manifest, geofenced "Reached" per stop, per-rider pickup/dropoff,
 End trip), backed by an **offline action queue** (AsyncStorage FIFO, flushed on mount/app-foreground/15s
-interval — **no background task infra of any kind**, confirmed by grep: no `expo-task-manager`, no
-background-location permission anywhere in `app.config.js`). `account/trip-request/[id].tsx` is the
-rider's live view (self-reported arrival, chat, driver call link).
+interval only — never in the background). `account/trip-request/[id].tsx` is the rider's live view
+(self-reported arrival, chat, driver call link).
 
 **Live tracking**: a single shared Socket.IO connection (`features/liveRide/socket.ts`) to the backend's
-`/ride` namespace. The driver's GPS watch (`expo-location` `watchPositionAsync`, foreground-only, 4s/10m)
-runs only while the trip screen is mounted and the trip is in progress — **it stops the instant the app
-is backgrounded or the driver navigates away**; there is no way to keep transmitting location in the
-background. **Chat** (`ChatModalSheet`/`ChatPanel`) rides the same socket, optimistic-send-then-reconcile
+`/ride` namespace. Two GPS sources, one at a time: while the app is open, the cockpit's
+`watchPositionAsync` watch (4s/10m) emits over the socket; once the server confirms the trip
+`IN_PROGRESS`, an `expo-location` **background task** (`features/liveRide/backgroundLocation/`, 10s/25m)
+keeps sharing after the driver leaves the app, posting batches to `POST /my/trips/:id/location`. Owner
+decisions: When-In-Use permission only (never "Allow all the time"); iOS background location mode with the
+blue indicator; Android foreground service with a "Trip in progress" notification that **dies when the
+app is swiped away**. The task is registered from the custom entry `index.js` so it exists even when the
+OS starts the app without UI; binaries without `expo-task-manager` have no background sharing, and the
+cockpit says so. It stops on trip end, logout, the active ride going away, or a 404/409 from the
+location endpoint. Details: `docs/ARCHITECTURE.md` §12. **Chat** (`ChatModalSheet`/`ChatPanel`) rides the same socket, optimistic-send-then-reconcile
 by client-generated UUID, with typing throttling and read receipts.
 
 Google Places/geocoding calls are **proxied through the backend** (`/geo/*`), not called directly from
@@ -168,8 +178,11 @@ Expo SDK 57, New Architecture + Hermes on. `android/` is a **gitignored, locally
 **no `eas.json` anywhere** in the repo or its parent workspace. Release Android builds currently sign
 with the **debug keystore** and have minification/shrinking **off by default** — both need real
 configuration before a production release. `google-services.json` points to Firebase project
-`rentalmarketplave` — cross-check this against the backend's own Firebase project before assuming push
-notifications work end-to-end. `expo-dev-client` is a dependency; combined with `react-native-maps`,
+`rentalmarketplave` — the same project the backend sends from (verified) — but Firebase has this app
+registered as **`com.rentalmobile.app`**; the file was hand-edited to `com.kerayego.app` and works only
+because the API key isn't package-restricted. There's no Firebase iOS app, so **iOS push doesn't work**:
+the iOS build registers an APNs token, which FCM rejects (see root `docs/ENVIRONMENT_GUIDE.md`).
+`expo-dev-client` is a dependency; combined with `react-native-maps`,
 `socket.io-client`, and reanimated 4, this app cannot run in plain Expo Go and needs a custom dev client
 build.
 
@@ -183,7 +196,7 @@ build.
 - The `EligibleReviewsList.tsx` vs. `account/_layout.tsx` contradiction on whether `PROVIDER` accounts
   use this app at all (see Authentication above) is unresolved in the source itself.
 - Release Android signing/minification is not production-ready (debug keystore, no shrink/minify).
-- No test infrastructure exists at all.
+- Tests are unit-only: nothing renders components or runs the app end to end.
 
 ## Where to go deeper
 

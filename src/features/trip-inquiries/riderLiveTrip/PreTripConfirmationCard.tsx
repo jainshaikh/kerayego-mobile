@@ -9,7 +9,15 @@ import { estimateServerNowMs, type ServerClock } from '../../trips/driverCockpit
 import { DriverArrivedAgo } from './DriverArrivedAgo';
 import { DriverContactActions } from './DriverContactActions';
 import { VehicleSummary } from './VehicleSummary';
-import { driverCallNumber, ownDropoffPoint, ownPickupPoint, seatFare, tripCurrency, type OwnStopPoint } from './tripDisplay';
+import {
+  driverCallNumber,
+  ownDropoffPoint,
+  ownPickupPoint,
+  riderTripVehicle,
+  seatFare,
+  tripCurrency,
+  type OwnStopPoint,
+} from './tripDisplay';
 
 interface PreTripConfirmationCardProps {
   inquiry: TripInquiry;
@@ -75,6 +83,8 @@ export function PreTripConfirmationCard({ inquiry, serverClock }: PreTripConfirm
   const { colors, spacing } = useTheme();
   const { trip } = inquiry;
   const fare = seatFare(trip.pricePerSeat, inquiry.requestedSeats, tripCurrency(trip));
+  // On a return trip, the business's fleet car and who operates it.
+  const vehicle = riderTripVehicle(trip);
 
   return (
     <AppCard style={{ marginTop: spacing.lg, borderColor: colors.success }}>
@@ -99,11 +109,15 @@ export function PreTripConfirmationCard({ inquiry, serverClock }: PreTripConfirm
         <StopRow heading="Your drop-off" point={ownDropoffPoint(inquiry)} />
       </View>
 
-      <Divider />
-      <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
-        Vehicle
-      </AppText>
-      <VehicleSummary vehicle={trip.userVehicle} />
+      {vehicle ? (
+        <>
+          <Divider />
+          <AppText muted variant="caption" style={{ marginBottom: spacing.sm }}>
+            Vehicle
+          </AppText>
+          <VehicleSummary vehicle={vehicle} />
+        </>
+      ) : null}
 
       {fare ? (
         <>

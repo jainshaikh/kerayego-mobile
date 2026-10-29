@@ -28,6 +28,7 @@ export default function AccountLayout() {
       <Stack.Screen name="my-trips/new" options={{ title: 'Post a Trip' }} />
       <Stack.Screen name="my-trips/[id]" options={{ title: 'Trip Details' }} />
       <Stack.Screen name="reviews" options={{ title: 'Ratings & Reviews' }} />
+      <Stack.Screen name="delete-account" options={{ title: 'Delete Account' }} />
     </Stack>
   );
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from '@jest/globals';
 import {
   BOOKING_TRANSITIONS,
   BookingRequestStatus,
+  bookingStatusDisplay,
   bookingStatusMeta,
   canOwnerEditUserVehicle,
   DocumentStatus,
@@ -11,6 +12,7 @@ import {
   PickupSource,
   TripEventType,
   TripInquiryStatus,
+  openSeatRequestCount,
   tripInquiryPosterActions,
   tripInquiryRiderActions,
   tripInquiryStatusMeta,
@@ -18,6 +20,7 @@ import {
   TripStatus,
   tripStatusMeta,
   userBookingActions,
+  UserStatus,
   UserVehicleStatus,
   userVehicleStatusMeta,
   VehicleStatus,
@@ -36,7 +39,9 @@ const BACKEND_ENUM_VALUES = {
   TripEventType: ['START', 'ARRIVED', 'PICKUP', 'NO_SHOW', 'DROPOFF', 'END', 'DEPARTED'],
   PickupSource: ['DRIVER_TAP', 'AUTO_ON_TRIP_END'],
   UserVehicleStatus: ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SUSPENDED'],
-  BookingRequestStatus: ['PENDING', 'CONTACTED', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+  BookingRequestStatus: ['PENDING', 'CONTACTED', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+  UserStatus: ['ACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION', 'PENDING_DELETION', 'DELETED'],
+  VehicleStatus: ['DRAFT', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'ARCHIVED', 'SUSPENDED'],
   Market: ['PK', 'SA', 'AE'],
   DocumentStatus: ['PENDING', 'APPROVED', 'REJECTED'],
   DocumentType: [
@@ -75,7 +80,9 @@ const BACKEND_TRIP_INQUIRY_NEXT_STATES: Record<TripInquiryStatus, TripInquirySta
 // CANCEL, only the trip's poster may ACCEPT/REJECT. EXPIRED is cron-only
 // (UpdateTripInquiryStatusDto's USER_SETTABLE_TRIP_INQUIRY_STATUSES omits it).
 const BACKEND_RIDER_SETTABLE = [TripInquiryStatus.CANCELLED];
-const BACKEND_POSTER_SETTABLE = [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED];
+// The poster may also cancel a booked (ACCEPTED) seat (A49; updateStatus's
+// isOperator branch).
+const BACKEND_POSTER_SETTABLE = [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED, TripInquiryStatus.CANCELLED];
 
 // trip-inquiries.service.ts SEAT_CANCEL_BLOCKED_TRIP_STATUSES: a rider can't
 // cancel a confirmed seat once its trip is over, called off or taken down
@@ -102,7 +109,11 @@ const BACKEND_BOOKING_TRANSITIONS: typeof BOOKING_TRANSITIONS = {
     nextStates: [BookingRequestStatus.ACCEPTED, BookingRequestStatus.REJECTED],
   },
   [BookingRequestStatus.ACCEPTED]: {
-    allowedBy: ['ADMIN'],
+    allowedBy: ['PROVIDER', 'ADMIN'],
+    nextStates: [BookingRequestStatus.IN_PROGRESS, BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
+  },
+  [BookingRequestStatus.IN_PROGRESS]: {
+    allowedBy: ['PROVIDER', 'ADMIN'],
     nextStates: [BookingRequestStatus.COMPLETED, BookingRequestStatus.CANCELLED],
   },
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
@@ -120,6 +131,8 @@ describe('enum mirrors', () => {
     ['PickupSource', PickupSource],
     ['UserVehicleStatus', UserVehicleStatus],
     ['BookingRequestStatus', BookingRequestStatus],
+    ['UserStatus', UserStatus],
+    ['VehicleStatus', VehicleStatus],
     ['Market', Market],
     ['DocumentStatus', DocumentStatus],
     ['DocumentType', DocumentType],
@@ -149,6 +162,11 @@ describe('status display meta', () => {
       expect(meta[status].label.length).toBeGreaterThan(0);
     }
   });
+
+  it('bookingStatusDisplay falls back to the raw value for a status this build does not know', () => {
+    expect(bookingStatusDisplay(BookingRequestStatus.IN_PROGRESS)).toEqual({ label: 'In Progress', tone: 'info' });
+    expect(bookingStatusDisplay('SOME_FUTURE_STATUS')).toEqual({ label: 'SOME_FUTURE_STATUS', tone: 'neutral' });
+  });
 });
 
 describe('tripPosterActions', () => {
@@ -173,7 +191,12 @@ describe('trip inquiry actions', () => {
   });
 
   it.each(Object.values(TripInquiryStatus))('poster actions from %s match the backend', (status) => {
-    expect([...tripInquiryPosterActions(status)].sort()).toEqual(allowed(status, BACKEND_POSTER_SETTABLE).sort());
+    // The backend would also take CANCELLED on a PENDING request from the
+    // poster; the app offers Decline (REJECTED) for that instead.
+    const expected = allowed(status, BACKEND_POSTER_SETTABLE).filter(
+      (next) => !(status === TripInquiryStatus.PENDING && next === TripInquiryStatus.CANCELLED),
+    );
+    expect([...tripInquiryPosterActions(status)].sort()).toEqual(expected.sort());
   });
 
   it('lets a rider cancel a confirmed (ACCEPTED) seat', () => {
@@ -194,6 +217,33 @@ describe('trip inquiry actions', () => {
 
   it.each(Object.values(TripStatus))('lets a rider withdraw a PENDING request whatever the trip status (%s)', (tripStatus) => {
     expect(tripInquiryRiderActions(TripInquiryStatus.PENDING, tripStatus)).toEqual([TripInquiryStatus.CANCELLED]);
+  });
+
+  it('lets the driver cancel a booked seat only where the backend does', () => {
+    expect(tripInquiryPosterActions(TripInquiryStatus.ACCEPTED)).toEqual([TripInquiryStatus.CANCELLED]);
+    for (const tripStatus of Object.values(TripStatus)) {
+      expect(tripInquiryPosterActions(TripInquiryStatus.ACCEPTED, tripStatus)).toEqual(
+        BACKEND_SEAT_CANCEL_BLOCKED_TRIP_STATUSES.includes(tripStatus) ? [] : [TripInquiryStatus.CANCELLED],
+      );
+    }
+  });
+
+  it('never lets the driver cancel a PENDING request (they decline it instead)', () => {
+    expect(tripInquiryPosterActions(TripInquiryStatus.PENDING)).not.toContain(TripInquiryStatus.CANCELLED);
+  });
+
+  it('counts the PENDING/ACCEPTED requests that block cancelling the trip (A49)', () => {
+    expect(openSeatRequestCount([])).toBe(0);
+    expect(
+      openSeatRequestCount(Object.values(TripInquiryStatus).map((status) => ({ status }))),
+    ).toBe(2);
+    expect(
+      openSeatRequestCount([
+        { status: TripInquiryStatus.REJECTED },
+        { status: TripInquiryStatus.CANCELLED },
+        { status: TripInquiryStatus.EXPIRED },
+      ]),
+    ).toBe(0);
   });
 
   it('never offers EXPIRED to anyone', () => {

@@ -93,6 +93,12 @@ function CustomerProfile({ user }: { user: { name: string; email: string } }) {
       </AppCard>
 
       <AppButton title="Log out" variant="secondary" onPress={logout} />
+
+      <AppCard style={{ padding: 0, marginTop: spacing.lg }}>
+        <View style={{ paddingHorizontal: spacing.lg }}>
+          <MenuRow label="Delete account" onPress={() => router.push('/account/delete-account')} />
+        </View>
+      </AppCard>
     </AppScreen>
   );
 }

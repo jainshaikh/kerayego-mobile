@@ -1,6 +1,7 @@
 import type { TripInquiry, TripInquiryTrip, TripInquiryVehicle } from '../../../api/trip-inquiries.api';
 import { currencyForMarket } from '../../../constants/markets';
 import { formatPrice, titleCase } from '../../../utils/format';
+import { tripVehicle } from '../../trips/tripVehicle';
 
 /** The trip's currency — it follows the market of the vehicle it was posted with. */
 export function tripCurrency(trip: Pick<TripInquiryTrip, 'userVehicle'>): string {
@@ -42,6 +43,49 @@ export function seatFare(pricePerSeat: string | number, seats: number, currency:
 export function vehicleDisplayName(vehicle: Pick<TripInquiryVehicle, 'make' | 'model' | 'year'>, withYear = true): string {
   const name = `${titleCase(vehicle.make)} ${titleCase(vehicle.model)}`;
   return withYear && vehicle.year ? `${vehicle.year} ${name}` : name;
+}
+
+// The car the rider rides in, ready to show: their driver's own car, or on a
+// return trip the rental business's fleet car plus who operates it.
+export interface RiderTripVehicle {
+  // e.g. "2019 Toyota Corolla"; a fleet car's listing title.
+  name: string;
+  // Without the year, for "Look for …" lines — the fleet title as is.
+  shortName: string;
+  color: string | null;
+  // Own car only — a fleet car on a trip has no plate.
+  plateNumber: string | null;
+  cover: { url: string; altText: string | null } | null;
+  // The rental business operating a return trip's car ("Operated by …"),
+  // else null.
+  operatedBy: string | null;
+}
+
+type RiderVehicleTrip = Pick<TripInquiryTrip, 'userVehicle' | 'isReturnTrip' | 'fleetVehicle' | 'providerProfile'>;
+
+/** The business operating a return trip (shown as "Operated by …"), else null. */
+export function tripOperator(trip: Pick<TripInquiryTrip, 'isReturnTrip' | 'providerProfile'>): string | null {
+  const business = trip.isReturnTrip ? trip.providerProfile?.businessName?.trim() : null;
+  return business || null;
+}
+
+/** The trip's car for the rider's screens (see tripVehicle), null when the backend sent none. */
+export function riderTripVehicle(trip: RiderVehicleTrip): RiderTripVehicle | null {
+  const vehicle = tripVehicle({
+    isReturnTrip: trip.isReturnTrip,
+    userVehicle: trip.userVehicle,
+    fleetVehicle: trip.fleetVehicle ?? null,
+  });
+  if (!vehicle) return null;
+  const withYear = !vehicle.isFleet && vehicle.year ? `${vehicle.year} ${vehicle.name}` : vehicle.name;
+  return {
+    name: withYear,
+    shortName: vehicle.name,
+    color: vehicle.color,
+    plateNumber: vehicle.plateNumber,
+    cover: vehicle.images[0] ?? null,
+    operatedBy: tripOperator(trip),
+  };
 }
 
 /**

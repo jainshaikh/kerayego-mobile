@@ -138,10 +138,8 @@ export default function VehicleDetailScreen() {
 
           <Pressable onPress={() => router.push(`/provider/${vehicle.providerProfile.slug}`)}>
             <AppCard style={{ marginTop: spacing.lg }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <AppText variant="label">{vehicle.providerProfile.businessName}</AppText>
-                <RatingSummaryBadge subjectType="PROVIDER" subjectId={vehicle.providerProfile.id} size="sm" />
-              </View>
+              {/* No business rating (A18) — only the car is rated on this screen. */}
+              <AppText variant="label">{vehicle.providerProfile.businessName}</AppText>
               {vehicle.showroom ? (
                 <AppText muted variant="caption" style={{ marginTop: 2, textTransform: 'capitalize' }}>
                   {vehicle.showroom.city}

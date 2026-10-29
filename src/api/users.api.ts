@@ -30,4 +30,23 @@ export const usersApi = {
   removeSavedVehicle: async (vehicleId: string) => {
     await apiClient.delete(`/users/me/saved-vehicles/${vehicleId}`);
   },
+
+  /**
+   * POST /users/me/delete-request — schedules deletion 72 hours out and signs
+   * the person out everywhere (all refresh tokens revoked). 400 = something is
+   * still active; its message says what.
+   */
+  requestAccountDeletion: async (payload: { reason?: string }) => {
+    const res = await apiClient.post<ApiResponse<AccountDeletionRequestResult>>(
+      '/users/me/delete-request',
+      payload,
+    );
+    return res.data.data;
+  },
 };
+
+export interface AccountDeletionRequestResult {
+  message: string;
+  scheduledFor: string;
+  status: 'PENDING_DELETION';
+}
