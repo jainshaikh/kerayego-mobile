@@ -29,11 +29,14 @@ export default function MyTripDetailScreen() {
   const { id, chatInquiryId } = useLocalSearchParams<{ id: string; chatInquiryId?: string }>();
   const { user } = useAuth();
   const { data: trip, isLoading, isError, refetch } = useMyTrip(id);
+  // Every request on this one trip (the endpoint's default page is 20): the
+  // driver must be able to see — and decline/cancel — each open one before
+  // Cancel trip is allowed (A49).
   const {
     data: inquiriesRes,
     isLoading: inquiriesLoading,
     refetch: refetchInquiries,
-  } = useTripInquiryInbox({ tripId: id as string });
+  } = useTripInquiryInbox({ tripId: id as string, limit: 100 });
   const updateInquiryStatus = useUpdateTripInquiryStatus();
   // Fetched (and cached by react-query) regardless of status — the backend
   // doesn't gate this on trip status either — so a manifest fetched earlier

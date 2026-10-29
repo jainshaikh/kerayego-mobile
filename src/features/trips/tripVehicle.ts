@@ -1,11 +1,12 @@
 import type { Market } from '../../types/enums';
 import { titleCase } from '../../utils/format';
 
-// The fields of TripCard/TripDetail this reads — both fit.
+// The fields of TripCard/TripDetail/TripInquiryTrip this reads — all fit (a
+// trip-inquiry response's userVehicle carries no id).
 interface TripVehicleSource {
   isReturnTrip?: boolean;
   userVehicle: {
-    id: string;
+    id?: string;
     make: string;
     model: string;
     year: number | null;
@@ -25,7 +26,8 @@ interface TripVehicleSource {
 }
 
 export interface TripVehicle {
-  id: string;
+  // undefined only for an own car read from a trip-inquiry response.
+  id: string | undefined;
   // A rental business's fleet car (return trip) rather than the poster's own.
   isFleet: boolean;
   // e.g. "Toyota Corolla"; a fleet car's listing title (which carries its year).

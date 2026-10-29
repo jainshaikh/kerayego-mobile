@@ -50,6 +50,14 @@ describe('tripVehicle', () => {
     });
   });
 
+  it("reads a trip-inquiry response's own car, which carries no id", () => {
+    const { id: _id, ...noId } = ownCar;
+    const vehicle = tripVehicle({ isReturnTrip: false, userVehicle: noId });
+    expect(vehicle?.id).toBeUndefined();
+    expect(vehicle?.name).toBe('Toyota Corolla');
+    expect(vehicle?.plateNumber).toBe('ABC-123');
+  });
+
   it('is null when the backend sent no vehicle for the trip', () => {
     expect(tripVehicle({ isReturnTrip: true, userVehicle: null, fleetVehicle: null })).toBeNull();
     expect(tripVehicle({ isReturnTrip: false, userVehicle: null, fleetVehicle: null })).toBeNull();

@@ -8,7 +8,16 @@ import { useTheme } from '../../../theme';
 import type { TripDetail } from '../../../types/api.types';
 import type { TripInquiry } from '../../../api/trip-inquiries.api';
 import type { useUpdateTripInquiryStatus } from '../../trip-inquiries/queries';
-import { TripInquiryStatus, TripStatus, tripInquiryStatusMeta, tripPosterActions, tripStatusMeta } from '../../../types/enums';
+import {
+  openSeatRequestCount,
+  TripInquiryStatus,
+  TripStatus,
+  tripInquiryPosterActions,
+  tripInquiryStatusMeta,
+  tripPosterActions,
+  tripStatusMeta,
+} from '../../../types/enums';
+import { normalizeApiError } from '../../../api/errors';
 import { formatDate, formatPrice } from '../../../utils/format';
 import type { DriverTripActions } from './useDriverTripActions';
 import { tripVehicle } from '../tripVehicle';
@@ -28,8 +37,9 @@ interface DriverPostedTripViewProps {
 }
 
 // The driver's view of a trip before it goes live: trip summary, vehicle,
-// incoming seat requests inbox (accept/decline), and the Start/Cancel
-// actions. Rendered by my-trips/[id].tsx while the trip hasn't started (or
+// incoming seat requests inbox (accept/decline a request, cancel a booked
+// seat — A49), and the Start/Cancel actions. Cancel trip stays disabled while
+// any request is still pending or booked: the backend refuses it then. Rendered by my-trips/[id].tsx while the trip hasn't started (or
 // after it has been rejected/cancelled).
 export function DriverPostedTripView({
   trip,
@@ -43,10 +53,32 @@ export function DriverPostedTripView({
   refreshControl,
 }: DriverPostedTripViewProps) {
   const { colors, spacing } = useTheme();
-  const [decliningId, setDecliningId] = useState<string | null>(null);
+  // The request whose decline / seat-cancel confirmation is open, with its
+  // optional note for the rider (stored as the reason on either).
+  const [confirming, setConfirming] = useState<{ id: string; action: 'decline' | 'cancelSeat' } | null>(null);
+  const [note, setNote] = useState('');
+  // The backend's message for the last failed action, shown under that request.
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   // A return trip runs in a business's fleet car — see tripVehicle.
   const vehicle = tripVehicle(trip);
-  const [declineNote, setDeclineNote] = useState('');
+  const openRequests = openSeatRequestCount(inquiries);
+  const isRowPending = (id: string) => updateInquiryStatus.isPending && updateInquiryStatus.variables?.id === id;
+
+  const openConfirm = (id: string, action: 'decline' | 'cancelSeat') => {
+    setNote('');
+    setRowError(null);
+    setConfirming({ id, action });
+  };
+
+  const setStatus = async (id: string, newStatus: TripInquiryStatus, withNote?: string) => {
+    setRowError(null);
+    try {
+      await updateInquiryStatus.mutateAsync({ id, data: { newStatus, note: withNote?.trim() || undefined } });
+      setConfirming(null);
+    } catch (error) {
+      setRowError({ id, message: normalizeApiError(error).message });
+    }
+  };
 
   const statusMeta = tripStatusMeta[trip.status];
   const posterActions = effectiveCompleted ? [] : effectiveInProgress ? ['end' as const] : tripPosterActions(trip.status);
@@ -160,54 +192,26 @@ export function DriverPostedTripView({
                   </AppText>
                 ) : null}
 
-                {inquiry.status === 'PENDING' && decliningId !== inquiry.id ? (
-                  <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-                    <View style={{ flex: 1 }}>
-                      <AppButton
-                        title="Accept"
-                        loading={updateInquiryStatus.isPending}
-                        onPress={() =>
-                          updateInquiryStatus.mutate({ id: inquiry.id, data: { newStatus: TripInquiryStatus.ACCEPTED } })
-                        }
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <AppButton
-                        title="Decline"
-                        variant="secondary"
-                        onPress={() => {
-                          setDeclineNote('');
-                          setDecliningId(inquiry.id);
-                        }}
-                      />
-                    </View>
-                  </View>
-                ) : null}
-
-                {decliningId === inquiry.id ? (
-                  <View style={{ marginTop: spacing.sm }}>
-                    <AppInput placeholder="Optional note for the rider" value={declineNote} onChangeText={setDeclineNote} />
-                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-                      <View style={{ flex: 1 }}>
-                        <AppButton title="Keep pending" variant="secondary" onPress={() => setDecliningId(null)} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <AppButton
-                          title="Confirm decline"
-                          variant="danger"
-                          loading={updateInquiryStatus.isPending}
-                          onPress={async () => {
-                            await updateInquiryStatus.mutateAsync({
-                              id: inquiry.id,
-                              data: { newStatus: TripInquiryStatus.REJECTED, note: declineNote || undefined },
-                            });
-                            setDecliningId(null);
-                          }}
-                        />
-                      </View>
-                    </View>
-                  </View>
-                ) : null}
+                <SeatRequestActions
+                  inquiry={inquiry}
+                  actions={tripInquiryPosterActions(inquiry.status, trip.status)}
+                  confirmingAction={confirming?.id === inquiry.id ? confirming.action : null}
+                  note={note}
+                  onChangeNote={setNote}
+                  error={rowError?.id === inquiry.id ? rowError.message : null}
+                  busy={updateInquiryStatus.isPending}
+                  pending={isRowPending(inquiry.id)}
+                  onAccept={() => setStatus(inquiry.id, TripInquiryStatus.ACCEPTED)}
+                  onOpenConfirm={(action) => openConfirm(inquiry.id, action)}
+                  onCloseConfirm={() => setConfirming(null)}
+                  onConfirm={(action) =>
+                    setStatus(
+                      inquiry.id,
+                      action === 'cancelSeat' ? TripInquiryStatus.CANCELLED : TripInquiryStatus.REJECTED,
+                      note,
+                    )
+                  }
+                />
               </View>
             ))
           )}
@@ -242,14 +246,134 @@ export function DriverPostedTripView({
       ) : null}
 
       {posterActions.includes('cancel') ? (
-        <AppButton
-          title="Cancel trip"
-          variant="danger"
-          loading={driverActions.cancelTripPending}
-          onPress={driverActions.handleCancel}
-          style={{ marginTop: spacing.md }}
-        />
+        <>
+          <AppButton
+            title="Cancel trip"
+            variant="danger"
+            // A49: the backend refuses while any seat request is pending or
+            // booked — the driver declines/cancels each one first.
+            disabled={inquiriesLoading || openRequests > 0}
+            loading={driverActions.cancelTripPending}
+            onPress={driverActions.handleCancel}
+            style={{ marginTop: spacing.md }}
+          />
+          {openRequests > 0 ? (
+            <AppText muted variant="caption" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+              Cancel or decline each seat first ({openRequests} still open).
+            </AppText>
+          ) : null}
+        </>
       ) : null}
     </FormScrollView>
+  );
+}
+
+type ConfirmAction = 'decline' | 'cancelSeat';
+
+interface SeatRequestActionsProps {
+  inquiry: TripInquiry;
+  // tripInquiryPosterActions(inquiry.status, trip.status)
+  actions: TripInquiryStatus[];
+  confirmingAction: ConfirmAction | null;
+  note: string;
+  onChangeNote: (text: string) => void;
+  // The backend's message for this request's last failed action.
+  error: string | null;
+  // Any request's status change is in flight / this one's is.
+  busy: boolean;
+  pending: boolean;
+  onAccept: () => void;
+  onOpenConfirm: (action: ConfirmAction) => void;
+  onCloseConfirm: () => void;
+  onConfirm: (action: ConfirmAction) => void;
+}
+
+// One request's driver actions: Accept/Decline while PENDING, Cancel seat
+// once ACCEPTED, each destructive one behind an inline confirmation with an
+// optional note the rider sees (UpdateTripInquiryStatusDto.note).
+function SeatRequestActions({
+  inquiry,
+  actions,
+  confirmingAction,
+  note,
+  onChangeNote,
+  error,
+  busy,
+  pending,
+  onAccept,
+  onOpenConfirm,
+  onCloseConfirm,
+  onConfirm,
+}: SeatRequestActionsProps) {
+  const { colors, spacing } = useTheme();
+  const canRespond = actions.includes(TripInquiryStatus.ACCEPTED);
+  const canCancelSeat = actions.includes(TripInquiryStatus.CANCELLED);
+  const seats = inquiry.requestedSeats;
+
+  return (
+    <>
+      {canRespond && !confirmingAction ? (
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <AppButton title="Accept" loading={pending} disabled={busy} onPress={onAccept} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppButton title="Decline" variant="secondary" disabled={busy} onPress={() => onOpenConfirm('decline')} />
+          </View>
+        </View>
+      ) : null}
+
+      {canCancelSeat && !confirmingAction ? (
+        <AppButton
+          title="Cancel seat"
+          variant="secondary"
+          disabled={busy}
+          onPress={() => onOpenConfirm('cancelSeat')}
+          style={{ marginTop: spacing.sm }}
+        />
+      ) : null}
+
+      {confirmingAction ? (
+        <View style={{ marginTop: spacing.sm }}>
+          {confirmingAction === 'cancelSeat' ? (
+            <AppText variant="caption" style={{ marginBottom: spacing.sm }}>
+              Cancel {inquiry.user.name}&apos;s booked {seats === 1 ? 'seat' : `${seats} seats`}? They&apos;ll be
+              told, and the {seats === 1 ? 'seat goes' : 'seats go'} back on sale.
+            </AppText>
+          ) : null}
+          <AppInput
+            placeholder={confirmingAction === 'cancelSeat' ? 'Reason for the rider (optional)' : 'Optional note for the rider'}
+            value={note}
+            onChangeText={onChangeNote}
+            maxLength={500}
+          />
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <AppButton
+                title={confirmingAction === 'cancelSeat' ? 'Keep seat' : 'Keep pending'}
+                variant="secondary"
+                disabled={pending}
+                onPress={onCloseConfirm}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <AppButton
+                title={confirmingAction === 'cancelSeat' ? 'Cancel seat' : 'Confirm decline'}
+                variant="danger"
+                loading={pending}
+                disabled={busy && !pending}
+                onPress={() => onConfirm(confirmingAction)}
+              />
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {error ? (
+        <AppText variant="caption" color={colors.danger} style={{ marginTop: spacing.sm }}>
+          {error}
+        </AppText>
+      ) : null}
+    </>
   );
 }

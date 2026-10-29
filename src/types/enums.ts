@@ -330,10 +330,30 @@ export function tripInquiryRiderActions(
   return [];
 }
 
+// The trip's driver/poster: accept or decline a PENDING request, and cancel
+// an ACCEPTED (booked) seat (A49 — the backend lets the poster or their
+// business cancel a confirmed seat, with the same trip-status gate and
+// departure-time 400 as the rider's cancel).
 export function tripInquiryPosterActions(
   status: TripInquiryStatus,
+  tripStatus?: TripStatus,
 ): TripInquiryStatus[] {
-  return status === TripInquiryStatus.PENDING
-    ? [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED]
-    : [];
+  if (status === TripInquiryStatus.PENDING) return [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED];
+  if (status === TripInquiryStatus.ACCEPTED) {
+    if (tripStatus && SEAT_CANCEL_BLOCKED_TRIP_STATUSES.includes(tripStatus)) return [];
+    return [TripInquiryStatus.CANCELLED];
+  }
+  return [];
+}
+
+// Seat requests that block cancelling the trip (A49): TripsService.cancel
+// refuses while any request is still PENDING or ACCEPTED.
+const TRIP_CANCEL_BLOCKING_INQUIRY_STATUSES: readonly TripInquiryStatus[] = [
+  TripInquiryStatus.PENDING,
+  TripInquiryStatus.ACCEPTED,
+];
+
+/** How many of a trip's seat requests must be declined or cancelled before the trip can be. */
+export function openSeatRequestCount(inquiries: readonly { status: TripInquiryStatus }[]): number {
+  return inquiries.filter((inquiry) => TRIP_CANCEL_BLOCKING_INQUIRY_STATUSES.includes(inquiry.status)).length;
 }

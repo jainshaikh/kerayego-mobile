@@ -12,6 +12,7 @@ import {
   PickupSource,
   TripEventType,
   TripInquiryStatus,
+  openSeatRequestCount,
   tripInquiryPosterActions,
   tripInquiryRiderActions,
   tripInquiryStatusMeta,
@@ -79,7 +80,9 @@ const BACKEND_TRIP_INQUIRY_NEXT_STATES: Record<TripInquiryStatus, TripInquirySta
 // CANCEL, only the trip's poster may ACCEPT/REJECT. EXPIRED is cron-only
 // (UpdateTripInquiryStatusDto's USER_SETTABLE_TRIP_INQUIRY_STATUSES omits it).
 const BACKEND_RIDER_SETTABLE = [TripInquiryStatus.CANCELLED];
-const BACKEND_POSTER_SETTABLE = [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED];
+// The poster may also cancel a booked (ACCEPTED) seat (A49; updateStatus's
+// isOperator branch).
+const BACKEND_POSTER_SETTABLE = [TripInquiryStatus.ACCEPTED, TripInquiryStatus.REJECTED, TripInquiryStatus.CANCELLED];
 
 // trip-inquiries.service.ts SEAT_CANCEL_BLOCKED_TRIP_STATUSES: a rider can't
 // cancel a confirmed seat once its trip is over, called off or taken down
@@ -188,7 +191,12 @@ describe('trip inquiry actions', () => {
   });
 
   it.each(Object.values(TripInquiryStatus))('poster actions from %s match the backend', (status) => {
-    expect([...tripInquiryPosterActions(status)].sort()).toEqual(allowed(status, BACKEND_POSTER_SETTABLE).sort());
+    // The backend would also take CANCELLED on a PENDING request from the
+    // poster; the app offers Decline (REJECTED) for that instead.
+    const expected = allowed(status, BACKEND_POSTER_SETTABLE).filter(
+      (next) => !(status === TripInquiryStatus.PENDING && next === TripInquiryStatus.CANCELLED),
+    );
+    expect([...tripInquiryPosterActions(status)].sort()).toEqual(expected.sort());
   });
 
   it('lets a rider cancel a confirmed (ACCEPTED) seat', () => {
@@ -209,6 +217,33 @@ describe('trip inquiry actions', () => {
 
   it.each(Object.values(TripStatus))('lets a rider withdraw a PENDING request whatever the trip status (%s)', (tripStatus) => {
     expect(tripInquiryRiderActions(TripInquiryStatus.PENDING, tripStatus)).toEqual([TripInquiryStatus.CANCELLED]);
+  });
+
+  it('lets the driver cancel a booked seat only where the backend does', () => {
+    expect(tripInquiryPosterActions(TripInquiryStatus.ACCEPTED)).toEqual([TripInquiryStatus.CANCELLED]);
+    for (const tripStatus of Object.values(TripStatus)) {
+      expect(tripInquiryPosterActions(TripInquiryStatus.ACCEPTED, tripStatus)).toEqual(
+        BACKEND_SEAT_CANCEL_BLOCKED_TRIP_STATUSES.includes(tripStatus) ? [] : [TripInquiryStatus.CANCELLED],
+      );
+    }
+  });
+
+  it('never lets the driver cancel a PENDING request (they decline it instead)', () => {
+    expect(tripInquiryPosterActions(TripInquiryStatus.PENDING)).not.toContain(TripInquiryStatus.CANCELLED);
+  });
+
+  it('counts the PENDING/ACCEPTED requests that block cancelling the trip (A49)', () => {
+    expect(openSeatRequestCount([])).toBe(0);
+    expect(
+      openSeatRequestCount(Object.values(TripInquiryStatus).map((status) => ({ status }))),
+    ).toBe(2);
+    expect(
+      openSeatRequestCount([
+        { status: TripInquiryStatus.REJECTED },
+        { status: TripInquiryStatus.CANCELLED },
+        { status: TripInquiryStatus.EXPIRED },
+      ]),
+    ).toBe(0);
   });
 
   it('never offers EXPIRED to anyone', () => {

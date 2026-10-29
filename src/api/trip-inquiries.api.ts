@@ -1,6 +1,6 @@
 import apiClient from './client';
 import type { ApiResponse, PaginationMeta, TripVehicleImage } from '../types/api.types';
-import type { Market, PickupSource, TripInquiryStatus, TripStatus } from '../types/enums';
+import type { Market, PickupSource, TripInquiryStatus, TripStatus, VehicleStatus } from '../types/enums';
 
 export interface TripInquiryUser {
   id: string;
@@ -49,6 +49,20 @@ export interface TripInquiryVehicle {
   images: TripVehicleImage[];
 }
 
+// The rental business's fleet car a return trip runs in
+// (TRIP_FLEET_VEHICLE_DETAIL_SELECT) — no colour, plate or market.
+export interface TripInquiryFleetVehicle {
+  id: string;
+  // Listing display title, e.g. "2023 Toyota Camry SE".
+  title: string;
+  make: string;
+  model: string;
+  year: number;
+  seatingCapacity: number;
+  status: VehicleStatus;
+  images: { id: string; url: string; altText: string | null; sortOrder: number }[];
+}
+
 export interface TripInquiryTrip {
   id: string;
   status: TripStatus;
@@ -71,10 +85,15 @@ export interface TripInquiryTrip {
   // The driver's personal email/phone reach the rider only once their seat
   // is ACCEPTED; null before that and after a rejection/expiry/cancellation.
   postedBy: { id: string; name: string; email: string | null; phone: string | null };
-  // null on a return trip (a rental business's fleet car) — the backend's
-  // trip-inquiry responses don't carry that fleet vehicle, so there is no
-  // car to show then.
+  // A return trip (isReturnTrip) runs in a rental business's fleet car:
+  // userVehicle is null then, and fleetVehicle/providerProfile (the business
+  // operating it) are set instead. Read the car through
+  // features/trips/tripVehicle.ts (riderTripVehicle), not either field.
   userVehicle: TripInquiryVehicle | null;
+  // Optional: absent from an older backend.
+  isReturnTrip?: boolean;
+  fleetVehicle?: TripInquiryFleetVehicle | null;
+  providerProfile?: { id: string; businessName: string } | null;
   // GET /trip-inquiries/:id only, from a newer backend (absent otherwise) —
   // the rider's live view can't get them from the public GET /trips/:id,
   // which 404s once the trip has started.

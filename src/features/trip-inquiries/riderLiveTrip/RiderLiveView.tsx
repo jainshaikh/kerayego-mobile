@@ -19,7 +19,7 @@ import type { RiderTripActions } from './useRiderTripActions';
 import type { RideActionAvailability } from './rideActionAvailability';
 import { deriveRiderRidePhase, liveRideCopy } from './riderTripState';
 import { hasCoordinates } from './routeStops';
-import { driverCallNumber } from './tripDisplay';
+import { driverCallNumber, riderTripVehicle } from './tripDisplay';
 import { DriverArrivedAgo } from './DriverArrivedAgo';
 import { RiderConfirmSheet } from './RiderConfirmSheet';
 import { StopsTab } from './StopsTab';
@@ -97,9 +97,10 @@ export function RiderLiveView({
 
   const { trip } = inquiry;
   const driverName = trip.postedBy.name;
-  // null on a return trip (see TripInquiryTrip.userVehicle).
-  const vehicle = trip.userVehicle;
-  const vehicleName = vehicle ? `${titleCase(vehicle.make)} ${titleCase(vehicle.model)}` : null;
+  // The driver's own car, or on a return trip the business's fleet car
+  // (no plate then) and who operates it.
+  const vehicle = riderTripVehicle(trip);
+  const vehicleName = vehicle?.shortName ?? null;
   const vehiclePlate = vehicle?.plateNumber ?? null;
 
   const pickupDistanceLabel =

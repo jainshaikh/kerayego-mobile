@@ -1,13 +1,15 @@
 import { describe, expect, it } from '@jest/globals';
 
 import type { TripInquiry, TripInquiryTrip } from '../../../api/trip-inquiries.api';
-import { Market, TripInquiryStatus, TripStatus } from '../../../types/enums';
+import { Market, TripInquiryStatus, TripStatus, VehicleStatus } from '../../../types/enums';
 import {
   driverCallNumber,
   ownDropoffPoint,
   ownPickupPoint,
+  riderTripVehicle,
   seatFare,
   tripCurrency,
+  tripOperator,
   vehicleDisplayName,
   whatsappUrl,
 } from './tripDisplay';
@@ -106,6 +108,60 @@ describe('vehicleDisplayName', () => {
   it('drops a missing year, or on request', () => {
     expect(vehicleDisplayName({ make: 'suzuki', model: 'alto', year: null })).toBe('Suzuki Alto');
     expect(vehicleDisplayName({ make: 'toyota', model: 'corolla', year: 2019 }, false)).toBe('Toyota Corolla');
+  });
+});
+
+describe('riderTripVehicle', () => {
+  const fleetVehicle = {
+    id: 'v-1',
+    title: '2023 Toyota Camry SE',
+    make: 'toyota',
+    model: 'camry',
+    year: 2023,
+    seatingCapacity: 4,
+    status: VehicleStatus.APPROVED,
+    images: [{ id: 'img-1', url: 'https://example.com/camry.jpg', altText: 'Camry', sortOrder: 0 }],
+  };
+
+  it("shows the driver's own car on a normal trip, with no operator", () => {
+    expect(riderTripVehicle(trip())).toEqual({
+      name: '2019 Toyota Corolla',
+      shortName: 'Toyota Corolla',
+      color: 'white',
+      plateNumber: 'ABC-123',
+      cover: null,
+      operatedBy: null,
+    });
+  });
+
+  it("shows the business's fleet car and who operates it on a return trip", () => {
+    const returnTrip = trip({
+      isReturnTrip: true,
+      userVehicle: null,
+      fleetVehicle,
+      providerProfile: { id: 'pp-1', businessName: 'Lahore Rent A Car' },
+    });
+    expect(riderTripVehicle(returnTrip)).toEqual({
+      name: '2023 Toyota Camry SE',
+      shortName: '2023 Toyota Camry SE',
+      color: null,
+      plateNumber: null,
+      cover: fleetVehicle.images[0],
+      operatedBy: 'Lahore Rent A Car',
+    });
+  });
+
+  it('is null when the backend sent no car (e.g. an older backend on a return trip)', () => {
+    expect(riderTripVehicle(trip({ isReturnTrip: true, userVehicle: null }))).toBeNull();
+  });
+});
+
+describe('tripOperator', () => {
+  it('names the business only on a return trip', () => {
+    const providerProfile = { id: 'pp-1', businessName: ' Lahore Rent A Car ' };
+    expect(tripOperator({ isReturnTrip: true, providerProfile })).toBe('Lahore Rent A Car');
+    expect(tripOperator({ isReturnTrip: false, providerProfile })).toBeNull();
+    expect(tripOperator({ isReturnTrip: true, providerProfile: null })).toBeNull();
   });
 });
 

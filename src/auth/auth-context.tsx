@@ -25,14 +25,22 @@ interface AuthContextValue {
   login: (data: LoginPayload) => Promise<AuthUser>;
   register: (data: RegisterPayload) => Promise<{ message: string }>;
   logout: () => Promise<void>;
+  /**
+   * After a successful POST /users/me/delete-request: the backend has already
+   * revoked every refresh token, so this clears the local session like logout
+   * but makes no backend call (no logout, no push-token unregister).
+   */
+  endSessionAfterAccountDeletion: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // 'logout': the user signed out (the push token was already unregistered with
 // the backend). 'expired': the refresh token was rejected — no valid access
-// token is left for any backend cleanup call.
-type SessionEndReason = 'logout' | 'expired';
+// token is left for any backend cleanup call. 'deleted': the user asked for
+// their account to be deleted, which revoked their refresh tokens — treated
+// like 'expired', with no backend cleanup call.
+type SessionEndReason = 'logout' | 'expired' | 'deleted';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | User | null>(null);
@@ -55,10 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The ride socket stays authenticated as whoever it handshook as until
       // it's closed — tear it down before anyone else can sign in here.
       disconnectRideSocket();
-      if (reason === 'expired') {
+      if (reason !== 'logout') {
         // Logout unregisters the push token with the backend first; an
-        // expired session can't, so stop this device receiving the expired
-        // user's pushes natively instead. Best-effort, not awaited.
+        // expired (or deleted) session can't, so stop this device receiving
+        // that user's pushes natively instead. Best-effort, not awaited.
         invalidateDevicePushToken();
       }
       await clearAllAuthStorage();
@@ -135,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await clearSession('logout');
   }, [clearSession]);
 
+  const endSessionAfterAccountDeletion = useCallback(() => clearSession('deleted'), [clearSession]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -143,8 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      endSessionAfterAccountDeletion,
     }),
-    [user, isBootstrapping, login, register, logout],
+    [user, isBootstrapping, login, register, logout, endSessionAfterAccountDeletion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

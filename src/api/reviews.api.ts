@@ -38,14 +38,23 @@ export interface RatingSummary {
   completedTripsCount?: number;
 }
 
+// GET /reviews/my/eligible (ReviewsService.getMyEligible). bookingsAsCustomer
+// rows carry vehicle + providerProfileId + the assigned driver;
+// bookingsAsProvider rows carry only user.
 export interface EligibleBooking {
   id: string;
   updatedAt?: string;
   providerProfileId?: string;
   vehicle?: { id: string; title: string; slug: string };
+  // The rental's driver (bookingsAsCustomer only) — null when the business
+  // never assigned one, in which case only the car can be rated.
+  assignedDriverId?: string | null;
+  assignedDriver?: { id: string; name: string; driverProfile: { fullName: string } | null } | null;
   user?: { id: string; name: string };
 }
 
+// tripsAsRider rows carry the trip's vehicle ids + poster; tripsAsDriver rows
+// carry user (the rider) and only id/originCity/destinationCity on trip.
 export interface EligibleTrip {
   id: string;
   trip: {
@@ -53,7 +62,10 @@ export interface EligibleTrip {
     originCity: string;
     destinationCity: string;
     departureAt?: string;
-    userVehicleId?: string;
+    userVehicleId?: string | null;
+    // A return trip runs in a business's fleet car (userVehicleId is null).
+    fleetVehicleId?: string | null;
+    isReturnTrip?: boolean;
     postedByUserId?: string;
   };
   user?: { id: string; name: string };

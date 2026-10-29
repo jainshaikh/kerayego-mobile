@@ -13,7 +13,7 @@ import type { OfflineTripQueue } from '../../trips/offlineSync';
 import { OfflineQueueNotice } from '../../trips/components/OfflineQueueNotice';
 import type { RiderTripActions } from './useRiderTripActions';
 import { pendingRequestTripNote, rejectionReasonHeading, seatStageBadge, type RiderSeatStage } from './riderTripState';
-import { ownDropoffPoint, ownPickupPoint, seatFare, tripCurrency, vehicleDisplayName } from './tripDisplay';
+import { ownDropoffPoint, ownPickupPoint, riderTripVehicle, seatFare, tripCurrency } from './tripDisplay';
 import { PreTripConfirmationCard } from './PreTripConfirmationCard';
 import { SeatOutcomeCard } from './SeatOutcomeCard';
 import { RiderConfirmSheet } from './RiderConfirmSheet';
@@ -57,6 +57,8 @@ export function RiderPreLiveView({
   const fare = seatFare(trip.pricePerSeat, inquiry.requestedSeats, tripCurrency(trip));
   const reasonHeading = rejectionReasonHeading(inquiry.status);
   const pendingNote = pendingRequestTripNote(inquiry.status, trip.status);
+  // On a return trip, the business's fleet car and who operates it.
+  const vehicle = riderTripVehicle(trip);
 
   return (
     <>
@@ -96,7 +98,8 @@ export function RiderPreLiveView({
               <Row label="Your pickup" value={ownPickupPoint(inquiry).label} />
               <Row label="Your drop-off" value={ownDropoffPoint(inquiry).label} />
               {inquiry.pickupNote ? <Row label="Your note" value={inquiry.pickupNote} /> : null}
-              {trip.userVehicle ? <Row label="Vehicle" value={vehicleDisplayName(trip.userVehicle)} /> : null}
+              {vehicle ? <Row label="Vehicle" value={vehicle.name} /> : null}
+              {vehicle?.operatedBy ? <Row label="Operated by" value={vehicle.operatedBy} /> : null}
               {fare ? <Row label="Price / seat" value={fare.perSeat} /> : null}
               {fare && inquiry.requestedSeats > 1 ? <Row label="Total" value={fare.total} /> : null}
             </AppCard>

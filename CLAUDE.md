@@ -30,9 +30,9 @@ avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help;
 §8) · `expo-location` + `expo-task-manager` (driver's background location) · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
 (present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 34 `*.test.ts(x)` files under `src/`, never under
+Jest** with the `jest-expo` preset (`npm test`): 35 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
-**The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; the other 33
+**The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; the other 34
 files pass when run by name.
 
 ## Project structure
