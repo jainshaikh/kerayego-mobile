@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, {
   Marker,
@@ -63,7 +63,11 @@ export interface LiveTripMapProps {
   // `key` changes, and — while `follow` is on — kept framed as they move,
   // until the user pans the map themselves. A Re-center button then brings it
   // back.
-  focus?: { points: { lat: number; lng: number }[]; key: string; follow: boolean };
+  focus?: {
+    points: { lat: number; lng: number }[];
+    key: string;
+    follow: boolean;
+  };
   // Additive, for the carpool driver's map only: riders sharing their
   // location until pickup (GET /my/trips/:id/rider-locations), each a small
   // person pin with a "name · 3 min ago" chip. Never moves the camera.
@@ -105,27 +109,56 @@ const DOT_ONLY_ANCHOR = { x: 0.5, y: 0.5 };
 const RIDER_PIN_SIZE = 26;
 const RIDER_PIN_ANCHOR = {
   x: 0.5,
-  y: RIDER_PIN_SIZE / 2 / (RIDER_PIN_SIZE + PIN_LABEL_GAP + PIN_LABEL_HEIGHT_ESTIMATE),
+  y:
+    RIDER_PIN_SIZE /
+    2 /
+    (RIDER_PIN_SIZE + PIN_LABEL_GAP + PIN_LABEL_HEIGHT_ESTIMATE),
 };
 const SELECTED_PIN_ANCHOR = {
   x: 0.5,
-  y: SELECTED_PIN_SIZE / 2 / (SELECTED_PIN_SIZE + PIN_LABEL_GAP + PIN_LABEL_HEIGHT_ESTIMATE),
+  y:
+    SELECTED_PIN_SIZE /
+    2 /
+    (SELECTED_PIN_SIZE + PIN_LABEL_GAP + PIN_LABEL_HEIGHT_ESTIMATE),
 };
 
-function pinStyleFor(status: NonNullable<LiveTripStop['status']>, colors: ThemeColors) {
+function pinStyleFor(
+  status: NonNullable<LiveTripStop['status']>,
+  colors: ThemeColors,
+) {
   if (status === 'reached') {
-    return { size: REGULAR_PIN_SIZE, fill: REACHED_DOT_BG, text: REACHED_DOT_FG, borderColor: undefined as string | undefined };
+    return {
+      size: REGULAR_PIN_SIZE,
+      fill: REACHED_DOT_BG,
+      text: REACHED_DOT_FG,
+      borderColor: undefined as string | undefined,
+    };
   }
   if (status === 'selected') {
-    return { size: SELECTED_PIN_SIZE, fill: colors.primary, text: colors.primaryText, borderColor: undefined as string | undefined };
+    return {
+      size: SELECTED_PIN_SIZE,
+      fill: colors.primary,
+      text: colors.primaryText,
+      borderColor: undefined as string | undefined,
+    };
   }
   // 'next' and 'upcoming' render identically — see the block comment above.
-  return { size: REGULAR_PIN_SIZE, fill: colors.surface, text: colors.text, borderColor: colors.borderStrong as string | undefined };
+  return {
+    size: REGULAR_PIN_SIZE,
+    fill: colors.surface,
+    text: colors.text,
+    borderColor: colors.borderStrong as string | undefined,
+  };
 }
 
 // Pakistan's rough centroid — same fallback used by LocationMapSheet — shown
 // only until fitToCoordinates runs (or when there are no stops to fit to).
-const DEFAULT_REGION: Region = { latitude: 30.3753, longitude: 69.3451, latitudeDelta: 12, longitudeDelta: 12 };
+const DEFAULT_REGION: Region = {
+  latitude: 30.3753,
+  longitude: 69.3451,
+  latitudeDelta: 12,
+  longitudeDelta: 12,
+};
 const FIT_EDGE_PADDING = { top: 80, right: 80, bottom: 80, left: 80 };
 // Matches the expected location.update ping cadence from the driver's GPS watch.
 const DRIVER_MARKER_ANIMATION_MS = 4000;
@@ -178,11 +211,6 @@ export function LiveTripMap({
   // Focus mode: whether the user has panned away (pauses following), reset
   // whenever the focus key changes — a new leg, or arriving at the stop.
   const [userPanned, setUserPanned] = useState(false);
-  const [lastFocusKey, setLastFocusKey] = useState(focus?.key);
-  if (focus?.key !== lastFocusKey) {
-    setLastFocusKey(focus?.key);
-    setUserPanned(false);
-  }
   const lastFollowFitAt = useRef(0);
   const focusPoints = focus?.points;
   const focusSignature = focusPoints ? pointsSignature(focusPoints) : '';
@@ -211,9 +239,12 @@ export function LiveTripMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignature]);
 
-  // A new focus (leg change, arrival): frame it straight away.
+  // A new focus (leg change, arrival): frame it straight away and reset user pan.
   useEffect(() => {
-    if (focus) fitToFocus();
+    if (focus) {
+      setUserPanned(false);
+      fitToFocus();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.key]);
 
@@ -240,7 +271,8 @@ export function LiveTripMap({
   // since changing `coordinate` on a live marker snaps it instead of
   // gliding. This is react-native-maps' established technique for smooth
   // live-tracking markers (deliberately not Animated.ValueXY).
-  const [initialDriverCoordinate, setInitialDriverCoordinate] = useState<LatLng | null>(null);
+  const [initialDriverCoordinate, setInitialDriverCoordinate] =
+    useState<LatLng | null>(null);
   // True once the driver Marker has survived at least one extra effect pass
   // since it was (re)created. Guards against a real, reproduced Android
   // crash: calling the native animateMarkerToCoordinate on a Marker in the
@@ -278,11 +310,14 @@ export function LiveTripMap({
   // First fix ever received: adjust state during render (React's documented
   // pattern for deriving state from a prop change — see "storing information
   // from previous renders") so the Marker mounts already at the right spot.
-  // Deliberately not inside an effect: that would add an extra render+commit
-  // round trip just to set state we already know synchronously.
-  if (driverPosition && !initialDriverCoordinate) {
-    setInitialDriverCoordinate({ latitude: driverPosition.lat, longitude: driverPosition.lng });
-  }
+  useEffect(() => {
+    if (driverPosition && !initialDriverCoordinate) {
+      setInitialDriverCoordinate({
+        latitude: driverPosition.lat,
+        longitude: driverPosition.lng,
+      });
+    }
+  }, [driverPosition, initialDriverCoordinate]);
 
   useEffect(() => {
     if (!driverPosition) {
@@ -302,10 +337,12 @@ export function LiveTripMap({
       hasMountedDriverMarkerRef.current = true;
       return;
     }
-    driverMarkerRef.current?.animateMarkerToCoordinate(
-      { latitude: driverPosition.lat, longitude: driverPosition.lng },
-      DRIVER_MARKER_ANIMATION_MS,
-    );
+    if (Platform.OS === 'android') {
+      driverMarkerRef.current?.animateMarkerToCoordinate(
+        { latitude: driverPosition.lat, longitude: driverPosition.lng },
+        DRIVER_MARKER_ANIMATION_MS,
+      );
+    }
   }, [driverPosition]);
 
   const bannerText = !isConnected
@@ -326,7 +363,10 @@ export function LiveTripMap({
       >
         {routePolyline && routePolyline.length > 1 ? (
           <Polyline
-            coordinates={routePolyline.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
+            coordinates={routePolyline.map((p) => ({
+              latitude: p.lat,
+              longitude: p.lng,
+            }))}
             strokeColor={`${colors.primary}99`}
             strokeWidth={4}
             zIndex={1}
@@ -359,7 +399,9 @@ export function LiveTripMap({
           // Numbered pin (driver's active-ride map). Only this custom-view
           // path ever gets a tap handler — a plain pin above has none.
           const pin = pinStyleFor(stop.status, colors);
-          const handlePress = onSelectStop ? () => onSelectStop(stop.id) : undefined;
+          const handlePress = onSelectStop
+            ? () => onSelectStop(stop.id)
+            : undefined;
 
           if (stop.status !== 'selected') {
             return (
@@ -373,8 +415,15 @@ export function LiveTripMap({
                 <View
                   style={[
                     styles.pinDot,
-                    { width: pin.size, height: pin.size, borderRadius: pin.size / 2, backgroundColor: pin.fill },
-                    pin.borderColor ? { borderWidth: 1, borderColor: pin.borderColor } : null,
+                    {
+                      width: pin.size,
+                      height: pin.size,
+                      borderRadius: pin.size / 2,
+                      backgroundColor: pin.fill,
+                    },
+                    pin.borderColor
+                      ? { borderWidth: 1, borderColor: pin.borderColor }
+                      : null,
                   ]}
                 >
                   <AppText variant="label" color={pin.text}>
@@ -404,7 +453,12 @@ export function LiveTripMap({
                 <View
                   style={[
                     styles.pinDot,
-                    { width: pin.size, height: pin.size, borderRadius: pin.size / 2, backgroundColor: pin.fill },
+                    {
+                      width: pin.size,
+                      height: pin.size,
+                      borderRadius: pin.size / 2,
+                      backgroundColor: pin.fill,
+                    },
                   ]}
                 >
                   <AppText variant="label" color={pin.text}>
@@ -414,7 +468,12 @@ export function LiveTripMap({
                 <View
                   style={[
                     styles.pinLabelChip,
-                    { marginTop: PIN_LABEL_GAP, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.chip },
+                    {
+                      marginTop: PIN_LABEL_GAP,
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderRadius: radii.chip,
+                    },
                     shadows.xs,
                   ]}
                 >
@@ -453,7 +512,12 @@ export function LiveTripMap({
               <View
                 style={[
                   styles.pinLabelChip,
-                  { marginTop: PIN_LABEL_GAP, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.chip },
+                  {
+                    marginTop: PIN_LABEL_GAP,
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderRadius: radii.chip,
+                  },
                   shadows.xs,
                 ]}
               >
@@ -468,7 +532,14 @@ export function LiveTripMap({
         {driverPosition && initialDriverCoordinate ? (
           <Marker
             ref={driverMarkerRef}
-            coordinate={initialDriverCoordinate}
+            coordinate={
+              Platform.OS === 'android' && initialDriverCoordinate
+                ? initialDriverCoordinate
+                : {
+                    latitude: driverPosition.lat,
+                    longitude: driverPosition.lng,
+                  }
+            }
             title="Driver"
             anchor={{ x: 0.5, y: 0.5 }}
             zIndex={10}
@@ -481,7 +552,12 @@ export function LiveTripMap({
               <View
                 style={[
                   styles.pinDot,
-                  { width: DRIVER_PIN_SIZE, height: DRIVER_PIN_SIZE, borderRadius: DRIVER_PIN_SIZE / 2, backgroundColor: DRIVER_PIN_FILL },
+                  {
+                    width: DRIVER_PIN_SIZE,
+                    height: DRIVER_PIN_SIZE,
+                    borderRadius: DRIVER_PIN_SIZE / 2,
+                    backgroundColor: DRIVER_PIN_FILL,
+                  },
                 ]}
               >
                 <AppText variant="label" color={colors.primaryText}>
@@ -489,14 +565,31 @@ export function LiveTripMap({
                 </AppText>
               </View>
             ) : (
-              <View style={[styles.driverDot, { backgroundColor: colors.primary, borderColor: colors.background }]} />
+              <View
+                style={[
+                  styles.driverDot,
+                  {
+                    backgroundColor: colors.primary,
+                    borderColor: colors.background,
+                  },
+                ]}
+              />
             )}
           </Marker>
         ) : null}
       </MapView>
 
       {bannerText ? (
-        <View style={[styles.banner, { backgroundColor: colors.surface, borderRadius: radii.card, padding: spacing.sm }]}>
+        <View
+          style={[
+            styles.banner,
+            {
+              backgroundColor: colors.surface,
+              borderRadius: radii.card,
+              padding: spacing.sm,
+            },
+          ]}
+        >
           <AppText variant="caption" color={colors.danger}>
             {bannerText}
           </AppText>

@@ -131,6 +131,17 @@ const locationHandlers = new Set<(payload: LocationUpdatePayload) => void>();
 const chatMessageHandlers = new Set<(payload: ChatMessage) => void>();
 const typingHandlers = new Set<(payload: ChatTypingPayload) => void>();
 const readReceiptHandlers = new Set<(payload: ChatReadPayload) => void>();
+const notificationInquiryRooms = new Set<string>();
+
+export function subscribeInquiryNotifications(tripInquiryId: string): void {
+  notificationInquiryRooms.add(tripInquiryId);
+  readySocket()?.emit('inquiry.join', { tripInquiryId }, () => {});
+}
+
+export function unsubscribeInquiryNotifications(tripInquiryId: string): void {
+  notificationInquiryRooms.delete(tripInquiryId);
+  readySocket()?.emit('inquiry.leave', { tripInquiryId }, () => {});
+}
 
 function subscribeHandler<T>(handlers: Set<(payload: T) => void>, handler: (payload: T) => void): () => void {
   handlers.add(handler);
@@ -196,6 +207,9 @@ function createSocket(): RideSocket {
   instance.on('ready', () => {
     reconnectAttempt = 0;
     setState({ isReady: true });
+    notificationInquiryRooms.forEach((tripInquiryId) => {
+      instance.emit('inquiry.join', { tripInquiryId }, () => {});
+    });
   });
 
   instance.on('disconnect', () => {
@@ -423,6 +437,9 @@ function joinInquiry(tripInquiryId: string): Promise<AckResult> {
 }
 
 function leaveInquiry(tripInquiryId: string): Promise<{ ok: boolean }> {
+  if (notificationInquiryRooms.has(tripInquiryId)) {
+    return Promise.resolve({ ok: true });
+  }
   const activeSocket = readySocket();
   if (!activeSocket) return Promise.resolve({ ok: false });
   return withAckTimeout<{ ok: boolean }>(
@@ -454,7 +471,7 @@ function markRead(tripInquiryId: string, lastReadMessageId: string): void {
   readySocket()?.emit('chat.read', { tripInquiryId, lastReadMessageId });
 }
 
-function onChatMessage(callback: (payload: ChatMessage) => void): () => void {
+export function onChatMessage(callback: (payload: ChatMessage) => void): () => void {
   return subscribeHandler(chatMessageHandlers, callback);
 }
 
