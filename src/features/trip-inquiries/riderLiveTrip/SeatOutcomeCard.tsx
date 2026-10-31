@@ -1,6 +1,5 @@
 import { View } from 'react-native';
-import { router } from 'expo-router';
-import { AppButton, AppCard, AppText } from '../../../components/ui';
+import { AppCard, AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripInquiry } from '../../../api/trip-inquiries.api';
 import { PickupSource, TripStatus } from '../../../types/enums';
@@ -19,36 +18,18 @@ interface SeatOutcomeCardProps {
   onOpenChat?: () => void;
 }
 
-// A trip can be rated from Ratings & Reviews once its departure time has
-// passed (the backend's eligibility rule) — no-shows excepted. Judged from
-// the payload's own times rather than the phone's clock: a drop-off after
-// departure, or (newer backend) the response's serverNow.
-function canRateYet(inquiry: Pick<TripInquiry, 'droppedOffAt' | 'serverNow' | 'trip'>): boolean {
-  const reference = inquiry.droppedOffAt ?? inquiry.serverNow;
-  if (!reference) return false;
-  return Date.parse(inquiry.trip.departureAt) <= Date.parse(reference);
-}
-
 // How a confirmed seat ended up when it's no longer live or upcoming: the
 // rider's own drop-off (the trip may still be running for the others), a
 // no-show mark from the driver, or the trip itself ending, being called off
 // or suspended without anything recorded for this rider. Nothing here is a
-// live action — only next steps and ways to reach the driver.
+// live action — only next steps and ways to reach the driver. Rating the
+// ride is the RatePromptCard below it (RiderPreLiveView), while it's unrated.
 export function SeatOutcomeCard({ stage, inquiry, onOpenChat }: SeatOutcomeCardProps) {
   const { colors, spacing } = useTheme();
   const { trip } = inquiry;
   const driverName = trip.postedBy.name;
   const callNumber = driverCallNumber(trip);
   const zone = tripTimeZoneSuffix();
-
-  const rateButton = canRateYet(inquiry) ? (
-    <AppButton
-      title="Rate your trip"
-      variant="secondary"
-      style={{ marginTop: spacing.md }}
-      onPress={() => router.push('/account/reviews')}
-    />
-  ) : null;
 
   if (stage === 'droppedOff') {
     // Riders the driver never tapped are dropped off automatically when the
@@ -66,7 +47,6 @@ export function SeatOutcomeCard({ stage, inquiry, onOpenChat }: SeatOutcomeCardP
             : `Dropped off at ${ownDropoffPoint(inquiry).label}${at ? ` · ${at}` : ''}.`}{' '}
           Thanks for riding with {driverName}.
         </AppText>
-        {rateButton}
         {callNumber || trip.contactNumber ? (
           <>
             <AppText muted variant="caption" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
@@ -121,7 +101,6 @@ export function SeatOutcomeCard({ stage, inquiry, onOpenChat }: SeatOutcomeCardP
       <AppText muted style={{ marginTop: spacing.xs }}>
         {body}
       </AppText>
-      {stage === 'tripCompleted' ? rateButton : null}
       {stage === 'tripSuspended' ? (
         <View style={{ marginTop: spacing.md }}>
           <DriverContactActions callNumber={callNumber} whatsappNumber={trip.contactNumber} />

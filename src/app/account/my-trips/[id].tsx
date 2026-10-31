@@ -142,6 +142,7 @@ export default function MyTripDetailScreen() {
           manifestFailed={manifestFailed}
           onRetryManifest={refetchManifest}
           riders={stopProgress.mergedRiders}
+          otherSheetOpen={chatLink.notice !== null}
         />
       ) : showCockpit ? (
         <DriverLiveCockpit

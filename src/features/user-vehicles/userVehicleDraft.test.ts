@@ -51,6 +51,7 @@ function makeVehicle(overrides: Partial<UserVehicleDetail> = {}): UserVehicleDet
     year: 2020,
     color: 'White',
     plateNumber: 'ABC-123',
+    cnicNumber: '35202-1234567-1',
     country: Market.PK,
     status: UserVehicleStatus.REJECTED,
     rejectionReason: 'Plate number is unreadable',
@@ -89,7 +90,14 @@ describe('draftFromVehicle', () => {
 
     const draft = draftFromVehicle(vehicle);
 
-    expect(draft.values).toEqual({ make: 'Toyota', model: 'Corolla', year: 2020, color: 'White', plateNumber: 'ABC-123' });
+    expect(draft.values).toEqual({
+      make: 'Toyota',
+      model: 'Corolla',
+      year: 2020,
+      color: 'White',
+      plateNumber: 'ABC-123',
+      cnicNumber: '35202-1234567-1',
+    });
     // Sorted by sortOrder; only url/publicId (+ a real altText) carry over.
     expect(draft.photos).toEqual([
       { url: `${S3}/${photoKey('a')}`, publicId: photoKey('a') },
@@ -106,6 +114,15 @@ describe('draftFromVehicle', () => {
     const draft = draftFromVehicle(makeVehicle({ year: null, color: null }));
     expect(draft.values.year).toBeUndefined();
     expect(draft.values.color).toBe('');
+  });
+
+  it('leaves the CNIC number empty for a vehicle registered before it was asked for', () => {
+    expect(draftFromVehicle(makeVehicle({ cnicNumber: null })).values.cnicNumber).toBe('');
+    expect(draftFromVehicle(makeVehicle({ cnicNumber: undefined })).values.cnicNumber).toBe('');
+  });
+
+  it('shows a stored CNIC number in the 12345-1234567-1 form', () => {
+    expect(draftFromVehicle(makeVehicle({ cnicNumber: '3520212345671' })).values.cnicNumber).toBe('35202-1234567-1');
   });
 
   it('leaves a document type the vehicle lacks empty', () => {
@@ -180,6 +197,32 @@ describe('buildUpdatePayload', () => {
       d.values.color = 'Silver';
     });
     expect(buildUpdatePayload(vehicle, draft)).toEqual({ year: 2019, color: 'Silver' });
+  });
+
+  describe('CNIC number', () => {
+    it('sends a changed number, formatted', () => {
+      const vehicle = makeVehicle();
+      const draft = editedDraft(vehicle, (d) => {
+        d.values.cnicNumber = '4210198765432';
+      });
+      expect(buildUpdatePayload(vehicle, draft)).toEqual({ cnicNumber: '42101-9876543-2' });
+    });
+
+    it('sends the number for a vehicle that had none', () => {
+      const vehicle = makeVehicle({ cnicNumber: null });
+      const draft = editedDraft(vehicle, (d) => {
+        d.values.cnicNumber = '35202-1234567-1';
+      });
+      expect(buildUpdatePayload(vehicle, draft)).toEqual({ cnicNumber: '35202-1234567-1' });
+    });
+
+    it('does not send the same number written without dashes', () => {
+      const vehicle = makeVehicle();
+      const draft = editedDraft(vehicle, (d) => {
+        d.values.cnicNumber = '3520212345671';
+      });
+      expect(buildUpdatePayload(vehicle, draft)).toEqual({});
+    });
   });
 
   describe('photos', () => {
@@ -307,14 +350,14 @@ describe('buildUpdatePayload', () => {
       d.photos = [newPhoto('c')];
       d.documents.ID_DOCUMENT_FRONT = newDoc('cnic-front-v2');
     });
-    const allowed = ['make', 'model', 'year', 'color', 'plateNumber', 'country', 'images', 'documents'];
+    const allowed = ['make', 'model', 'year', 'color', 'plateNumber', 'cnicNumber', 'country', 'images', 'documents'];
     for (const key of Object.keys(buildUpdatePayload(vehicle, draft))) expect(allowed).toContain(key);
   });
 });
 
 describe('buildCreatePayload', () => {
   const draft: UserVehicleDraft = {
-    values: { make: 'Toyota', model: 'Corolla', year: undefined, color: '', plateNumber: 'ABC-123' },
+    values: { make: 'Toyota', model: 'Corolla', year: undefined, color: '', plateNumber: 'ABC-123', cnicNumber: '3520212345671' },
     photos: [newPhoto('a')],
     documents: {
       ID_DOCUMENT_FRONT: newDoc('front'),
@@ -332,6 +375,8 @@ describe('buildCreatePayload', () => {
       year: undefined,
       color: undefined,
       plateNumber: 'ABC-123',
+      // Sent in the stored 12345-1234567-1 form.
+      cnicNumber: '35202-1234567-1',
       images: [newPhoto('a')],
       cnicFrontUrl: newDoc('front').url,
       cnicFrontPublicId: newDoc('front').publicId,

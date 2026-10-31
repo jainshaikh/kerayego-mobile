@@ -4,6 +4,8 @@ import { router } from 'expo-router';
 import { useAuth } from '../../../auth/auth-context';
 import { useMyBookingCounts } from '../../../features/booking-requests/queries';
 import { useSavedVehicles } from '../../../features/saved-vehicles/queries';
+import { IdentityHoldBanner } from '../../../features/identity/components/IdentityHoldBanner';
+import { useIdentityHold } from '../../../features/identity/useIdentityHold';
 import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText } from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
@@ -52,6 +54,7 @@ function CustomerProfile({ user }: { user: { name: string; email: string } }) {
   const { logout } = useAuth();
   const counts = useMyBookingCounts();
   const saved = useSavedVehicles();
+  const hold = useIdentityHold();
   const refresh = usePullToRefresh(() => Promise.all([counts.refetch(), saved.refetch()]));
 
   return (
@@ -64,6 +67,8 @@ function CustomerProfile({ user }: { user: { name: string; email: string } }) {
       <AppText muted style={{ marginBottom: spacing.lg }}>
         {user.email}
       </AppText>
+
+      <IdentityHoldBanner message={hold.notice} style={{ marginBottom: spacing.lg }} />
 
       <View style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg }}>
         <AppCard style={{ flex: 1, alignItems: 'center' }}>

@@ -10,6 +10,8 @@ import { LocationField } from '../../location/components/LocationField';
 import { bookingInquirySchema, type BookingInquiryFormValues } from '../../../schemas/booking.schema';
 import { useCreateBookingRequest } from '../queries';
 import { normalizeApiError } from '../../../api/errors';
+import { IdentityHoldBanner } from '../../identity/components/IdentityHoldBanner';
+import { useIdentityHold } from '../../identity/useIdentityHold';
 import { RentalDurationType } from '../../../types/enums';
 import {
   computeReturnDate,
@@ -31,6 +33,7 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
   const { colors, spacing, radii } = useTheme();
   const createBooking = useCreateBookingRequest();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const hold = useIdentityHold();
 
   const availableDurations = getAvailableDurations(vehiclePricing);
 
@@ -77,13 +80,23 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
       onClose();
       router.push('/account/inquiries');
     } catch (error) {
-      setSubmitError(normalizeApiError(error).message);
+      const normalized = normalizeApiError(error);
+      // On hold: the banner shows the server's message instead.
+      if (hold.handleHoldError(normalized)) return;
+      setSubmitError(normalized.message);
     }
   };
 
+  const handleClose = () => {
+    hold.clearRefusal();
+    onClose();
+  };
+
   return (
-    <AppSheet visible={visible} onClose={onClose} title="Send an inquiry" subtitle={vehicleTitle}>
+    <AppSheet visible={visible} onClose={handleClose} title="Send an inquiry" subtitle={vehicleTitle}>
       <ScrollView keyboardShouldPersistTaps="handled">
+        {/* A refused submit shows its banner down by the buttons instead. */}
+        <IdentityHoldBanner message={hold.refusedMessage ? null : hold.notice} />
         <Controller
           control={control}
           name="requestedFromDate"
@@ -239,6 +252,7 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
           )}
         />
 
+        <IdentityHoldBanner message={hold.refusedMessage} style={{ marginBottom: spacing.sm }} />
         {submitError ? (
           <AppText color={colors.danger} style={{ marginBottom: spacing.sm }}>
             {submitError}
@@ -248,7 +262,7 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
 
       <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
         <View style={{ flex: 1 }}>
-          <AppButton title="Cancel" variant="secondary" onPress={onClose} />
+          <AppButton title="Cancel" variant="secondary" onPress={handleClose} />
         </View>
         <View style={{ flex: 2 }}>
           <AppButton title="Send inquiry" loading={createBooking.isPending} onPress={handleSubmit(onSubmit)} />

@@ -13,6 +13,7 @@ import type {
   UserVehicleImage,
 } from '../../types/api.types';
 import { DocumentStatus, UserVehicleStatus, type StatusTone } from '../../types/enums';
+import { formatCnicInput } from '../../utils/cnic';
 
 // Pure logic behind the personal-vehicle form (register + edit/resubmit):
 // what the form starts from, and what each screen sends — create's full
@@ -94,6 +95,9 @@ export function draftFromVehicle(vehicle: UserVehicleDetail): UserVehicleDraft {
       year: vehicle.year ?? undefined,
       color: vehicle.color ?? '',
       plateNumber: vehicle.plateNumber,
+      // Null for a vehicle registered before the number was asked for (or a
+      // backend that doesn't return it yet) — the form then requires it.
+      cnicNumber: formatCnicInput(vehicle.cnicNumber ?? ''),
     },
     photos: photosInOrder(vehicle).map(imageInputFrom),
     documents,
@@ -121,6 +125,7 @@ export function buildCreatePayload(id: string, draft: UserVehicleDraft): CreateU
     year: values.year,
     color: values.color || undefined,
     plateNumber: values.plateNumber,
+    cnicNumber: formatCnicInput(values.cnicNumber),
     images: photos,
     cnicFrontUrl: cnicFront.url,
     cnicFrontPublicId: cnicFront.publicId,
@@ -150,6 +155,10 @@ export function buildUpdatePayload(vehicle: UserVehicleDetail, draft: UserVehicl
   if (values.make !== vehicle.make) payload.make = values.make;
   if (values.model !== vehicle.model) payload.model = values.model;
   if (values.plateNumber !== vehicle.plateNumber) payload.plateNumber = values.plateNumber;
+  // Compared in the stored 12345-1234567-1 form. Never cleared: the form
+  // requires a number, so there is always one to send when it changed.
+  const cnicNumber = formatCnicInput(values.cnicNumber);
+  if (cnicNumber !== formatCnicInput(vehicle.cnicNumber ?? '')) payload.cnicNumber = cnicNumber;
 
   // Emptied optional fields are sent as null so the backend clears them.
   const year = values.year ?? null;

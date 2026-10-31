@@ -34,8 +34,11 @@ export function useLiveInquiryNotifications(userId: string | undefined): void {
 
   const lastUserIdRef = useRef<string | undefined>(userId);
 
-  // Reset tracking when user switches or logs out
-  if (lastUserIdRef.current !== userId) {
+  // Reset tracking when user switches or logs out. An effect (refs can't be
+  // touched during render), declared before the others: React runs a commit's
+  // effects in order, so the reset lands before they restart for the new user.
+  useEffect(() => {
+    if (lastUserIdRef.current === userId) return;
     lastUserIdRef.current = userId;
     isDriverInitializedRef.current = false;
     knownDriverInquiryIdsRef.current.clear();
@@ -44,7 +47,7 @@ export function useLiveInquiryNotifications(userId: string | undefined): void {
     knownTripStatusesRef.current.clear();
     isChatInitializedRef.current.clear();
     knownChatMessageIdsRef.current.clear();
-  }
+  }, [userId]);
 
   // -------------------------------------------------------------
   // 1. REAL-TIME CHAT: WebSocket listener (instant, zero rate limits)

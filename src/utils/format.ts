@@ -1,5 +1,6 @@
 // Backend Decimal fields (pricePerDay, pricePerWeek) serialize as strings over JSON.
-export function formatPrice(value: string | number | null | undefined, currency = 'AED'): string {
+// Every price on KerayeGo is in PKR, whatever the market (owner decision 2026-10-31).
+export function formatPrice(value: string | number | null | undefined, currency = 'PKR'): string {
   if (value === null || value === undefined || value === '') return '—';
   const num = typeof value === 'string' ? parseFloat(value) : value;
   if (Number.isNaN(num)) return '—';

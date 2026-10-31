@@ -142,6 +142,8 @@ export function useEndTrip(id: string) {
       // The ended trip is no longer the driver's active ride — let the
       // app-wide lock go now rather than on its next 20 s poll.
       queryClient.invalidateQueries({ queryKey: ['myActiveRide'] });
+      // Its riders become ratable now — the summary's "Rate your riders".
+      queryClient.invalidateQueries({ queryKey: ['reviews', 'my', 'eligible'] });
     },
   });
 }

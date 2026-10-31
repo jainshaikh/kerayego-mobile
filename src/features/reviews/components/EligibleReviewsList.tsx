@@ -1,91 +1,18 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { useMyEligibleReviews, useCreateReview } from '../queries';
-import { RatingStars } from '../../../components/reviews/RatingStars';
-import { AppButton, AppCard, AppInput, AppSheet, AppText, EmptyState, LoadingState } from '../../../components/ui';
+import { useMyEligibleReviews } from '../queries';
+import { AppButton, AppCard, AppText, EmptyState, LoadingState } from '../../../components/ui';
 import { useTheme } from '../../../theme';
-import { normalizeApiError } from '../../../api/errors';
 import {
   bookingDriverName,
-  buildReviewPayload,
   customerBookingRating,
   driverTripRating,
-  MAX_REVIEW_COMMENT_LENGTH,
   providerBookingRating,
   riderTripRating,
-  targetKey,
   type PendingRating,
 } from '../rateTargets';
-
-function RateModal({ pending, onClose }: { pending: PendingRating | null; onClose: () => void }) {
-  const { colors, spacing } = useTheme();
-  const createReview = useCreateReview();
-  const [ratings, setRatings] = useState<Record<string, number>>({});
-  const [comments, setComments] = useState<Record<string, string>>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const close = () => {
-    setRatings({});
-    setComments({});
-    setSubmitError(null);
-    onClose();
-  };
-
-  if (!pending) return null;
-
-  // null until every question has a 1–5 rating (see buildReviewPayload).
-  const payload = buildReviewPayload(pending, ratings, comments);
-
-  const handleSubmit = async () => {
-    if (!payload) return;
-    setSubmitError(null);
-    try {
-      await createReview.mutateAsync(payload);
-      close();
-    } catch (error) {
-      setSubmitError(normalizeApiError(error).message);
-    }
-  };
-
-  return (
-    <AppSheet visible={!!pending} onClose={close} title={pending.title}>
-      {pending.targets.map((t) => {
-        const key = targetKey(t);
-        return (
-          <View key={key} style={{ marginBottom: spacing.lg }}>
-            <AppText variant="label" style={{ marginBottom: spacing.xs }}>
-              {t.label}
-            </AppText>
-            <RatingStars value={ratings[key] ?? 0} onChange={(v) => setRatings((r) => ({ ...r, [key]: v }))} size="lg" />
-            <AppInput
-              style={{ marginTop: spacing.sm, marginBottom: 0 }}
-              multiline
-              numberOfLines={2}
-              maxLength={MAX_REVIEW_COMMENT_LENGTH}
-              placeholder="Add a comment (optional)"
-              value={comments[key] ?? ''}
-              onChangeText={(text) => setComments((c) => ({ ...c, [key]: text }))}
-            />
-          </View>
-        );
-      })}
-
-      {submitError ? (
-        <AppText color={colors.danger} style={{ marginBottom: spacing.md }}>
-          {submitError}
-        </AppText>
-      ) : null}
-
-      <AppButton
-        title="Submit rating"
-        disabled={!payload}
-        loading={createReview.isPending}
-        onPress={handleSubmit}
-      />
-    </AppSheet>
-  );
-}
+import { RateSheet } from './RateSheet';
 
 // Shared entry point for anything the current user can now rate — a completed
 // vehicle rental (as the customer: the car and, when there was one, the
@@ -122,17 +49,15 @@ export function EligibleReviewsList() {
 
   const hasAny = customerBookings.length + providerBookings.length + riderTrips.length + driverTrips.length > 0;
 
-  if (!hasAny) {
-    return (
-      <EmptyState
-        title="Nothing to rate right now"
-        description="Completed rentals and departed trips you haven't rated yet will show up here."
-      />
-    );
-  }
-
   return (
     <View>
+      {!hasAny ? (
+        <EmptyState
+          title="Nothing to rate right now"
+          description="Completed rentals and departed trips you haven't rated yet will show up here."
+        />
+      ) : null}
+
       {customerBookings.length > 0 ? (
         <Section title="Rentals you can rate">
           {customerBookings.map((row) => (
@@ -165,7 +90,14 @@ export function EligibleReviewsList() {
         </Section>
       ) : null}
 
-      <RateModal pending={pending} onClose={() => setPending(null)} />
+      {/* Stays mounted as the list empties out once the last row is rated,
+          so its thank-you isn't cut short. */}
+      <RateSheet
+        visible={!!pending}
+        pendings={pending ? [pending] : []}
+        title={pending?.title ?? ''}
+        onClose={() => setPending(null)}
+      />
     </View>
   );
 }

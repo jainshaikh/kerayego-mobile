@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { useUserVehicle } from '../../../features/user-vehicles/queries';
@@ -9,6 +10,7 @@ import {
   documentReviewBadge,
   documentsByType,
 } from '../../../features/user-vehicles/userVehicleDraft';
+import { plateHistoryText } from '../../../features/reviews/plateHistory';
 import {
   AppButton,
   AppCard,
@@ -44,6 +46,8 @@ export default function UserVehicleDetailScreen() {
 
   const statusMeta = userVehicleStatusMeta[vehicle.status];
   const documents = documentsByType(vehicle.documents);
+  // Rides/reviews other listings of this plate earned (plan A17) — null hides the card.
+  const history = plateHistoryText(vehicle.plateHistory);
   // Edit/resubmit is offered exactly where PATCH /my/vehicles/:id accepts it.
   const openEdit = () => router.push({ pathname: '/account/my-vehicles/edit/[id]', params: { id: vehicle.id } });
 
@@ -94,6 +98,24 @@ export default function UserVehicleDetailScreen() {
         <Row label="Plate number" value={vehicle.plateNumber} />
         {vehicle.country ? <Row label="Country" value={MARKETS[vehicle.country]?.label ?? vehicle.country} /> : null}
       </AppCard>
+
+      {history ? (
+        <AppCard
+          style={{
+            marginBottom: spacing.lg,
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: spacing.sm,
+            backgroundColor: tones.info.bg,
+            borderColor: tones.info.bg,
+          }}
+        >
+          <Ionicons name="information-circle-outline" size={18} color={tones.info.fg} style={{ marginTop: 1 }} />
+          <AppText variant="caption" color={tones.info.fg} style={{ flex: 1, minWidth: 0 }}>
+            {history}
+          </AppText>
+        </AppCard>
+      ) : null}
 
       {vehicle.images.length > 0 ? (
         <View style={{ marginBottom: spacing.lg }}>

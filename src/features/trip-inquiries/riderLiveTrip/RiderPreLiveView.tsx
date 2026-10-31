@@ -12,6 +12,7 @@ import { CustomerLocationSharingCard } from '../../liveRide/components/CustomerL
 import type { ServerClock } from '../../trips/driverCockpit/noShow';
 import type { OfflineTripQueue } from '../../trips/offlineSync';
 import { OfflineQueueNotice } from '../../trips/components/OfflineQueueNotice';
+import { RatePromptCard } from '../../reviews/components/RatePromptCard';
 import type { RiderTripActions } from './useRiderTripActions';
 import { pendingRequestTripNote, rejectionReasonHeading, seatStageBadge, type RiderSeatStage } from './riderTripState';
 import { ownDropoffPoint, ownPickupPoint, riderTripVehicle, seatFare, tripCurrency } from './tripDisplay';
@@ -32,6 +33,8 @@ interface RiderPreLiveViewProps {
   chatOpen: boolean;
   onOpenChat: () => void;
   onCloseChat: () => void;
+  // Set while the ride is over and still unrated — opens the screen's rating sheet.
+  onRate?: () => void;
 }
 
 // The rider's scrolling view of their request whenever the ride isn't live
@@ -51,6 +54,7 @@ export function RiderPreLiveView({
   chatOpen,
   onOpenChat,
   onCloseChat,
+  onRate,
 }: RiderPreLiveViewProps) {
   const { spacing } = useTheme();
   const { trip } = inquiry;
@@ -86,6 +90,15 @@ export function RiderPreLiveView({
           <>
             {stage !== 'request' && stage !== 'live' ? (
               <SeatOutcomeCard stage={stage} inquiry={inquiry} onOpenChat={onOpenChat} />
+            ) : null}
+
+            {onRate ? (
+              <RatePromptCard
+                title="Rate your trip"
+                body={`How was ${trip.postedBy.name} and the car?`}
+                onRate={onRate}
+                style={{ marginTop: spacing.lg }}
+              />
             ) : null}
 
             {pendingNote ? (

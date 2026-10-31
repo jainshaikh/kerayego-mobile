@@ -297,6 +297,10 @@ function invalidateAfterFlush(queryClient: QueryClient, tripId: string, result: 
   queryClient.invalidateQueries({ queryKey: ['myTrip', tripId] });
   queryClient.invalidateQueries({ queryKey: ['tripManifest', tripId] });
   queryClient.invalidateQueries({ queryKey: ['myActiveRide'] });
+  // A queued End just reached the server: the trip's riders become ratable.
+  if (result.applied.some((action) => action.kind === 'end')) {
+    queryClient.invalidateQueries({ queryKey: ['reviews', 'my', 'eligible'] });
+  }
   const inquiryIds = new Set<string>();
   result.applied.forEach((action) => {
     if (action.kind === 'event' && action.payload.tripInquiryId) inquiryIds.add(action.payload.tripInquiryId);

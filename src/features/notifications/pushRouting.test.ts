@@ -203,6 +203,23 @@ describe('resolvePushTarget — vehicle decisions', () => {
   });
 });
 
+describe('resolvePushTarget — rental bookings', () => {
+  it.each(['booking.statusChanged', 'booking.jobStarted', 'booking.jobCompleted'])('opens the booking for %s', (type) => {
+    expect(resolvePushTarget({ type, bookingId: 'bk-1', recipientUserId: ME }, ME)).toEqual(route('/account/inquiry/bk-1'));
+  });
+
+  it('does nothing without a booking id, or for someone else’s booking push', () => {
+    expect(resolvePushTarget({ type: 'booking.jobStarted' }, ME)).toEqual({ kind: 'none' });
+    expect(resolvePushTarget({ type: 'booking.jobStarted', bookingId: 'bk-1', recipientUserId: OTHER }, ME)).toEqual({
+      kind: 'none',
+    });
+  });
+
+  it('ignores the Partner app’s booking pushes', () => {
+    expect(resolvePushTarget({ type: 'booking.created', bookingId: 'bk-1' }, ME)).toEqual({ kind: 'none' });
+  });
+});
+
 describe('resolvePushTarget — anything else just opens the app', () => {
   it.each([
     ['the admin test broadcast', { type: 'test' }],
@@ -362,6 +379,13 @@ describe('pushInvalidationKeys', () => {
       ['myTrip'],
       ['tripManifest'],
       ['myTrips'],
+    ]);
+  });
+
+  it('refreshes the booking and the bookings list for a rental booking push', () => {
+    expect(pushInvalidationKeys({ type: 'booking.statusChanged', bookingId: 'bk-1', recipientUserId: ME }, ME)).toEqual([
+      ['booking', 'bk-1'],
+      ['myInquiries'],
     ]);
   });
 

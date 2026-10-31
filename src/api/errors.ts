@@ -16,6 +16,10 @@ export interface NormalizedApiError {
   kind: ApiErrorKind;
   message: string;
   statusCode?: number;
+  // The backend's machine-readable error code (body.error.code), e.g.
+  // 'IDENTITY_ON_HOLD', 'TRIP_NOT_IN_PROGRESS' or a generic one like
+  // 'FORBIDDEN'. Absent when there was no response or no code in it.
+  code?: string;
   fieldErrors?: { field?: string; message: string }[];
 }
 
@@ -82,10 +86,13 @@ export function normalizeApiError(error: unknown): NormalizedApiError {
       }
     }
 
+    const code = typeof body?.error?.code === 'string' ? body.error.code : undefined;
+
     return {
       kind,
       statusCode: status,
       message,
+      ...(code ? { code } : {}),
       fieldErrors: body?.error?.details,
     };
   }

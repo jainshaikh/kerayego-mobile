@@ -1,6 +1,6 @@
 import type { ApiErrorKind } from '../../api/errors';
 import type { MyActiveRide } from '../../api/trips.api';
-import type { PushRecipientRole, RidePushType, UserVehiclePushType } from '../../types/api.types';
+import type { BookingPushType, PushRecipientRole, RidePushType, UserVehiclePushType } from '../../types/api.types';
 
 // Where a tapped push should take the user — pure, so the whole routing table
 // is unit-tested (pushRouting.test.ts). usePushTapNavigation does the actual
@@ -35,6 +35,14 @@ export const USER_VEHICLE_PUSH_TYPES = [
   'userVehicle.reactivated',
 ] as const satisfies readonly UserVehiclePushType[];
 
+// Mirrors BOOKING_PUSH_TYPES (the customer-app ones) in kerayego-backend
+// src/modules/notifications/listeners/booking-push.listener.ts.
+export const BOOKING_PUSH_TYPES = [
+  'booking.statusChanged',
+  'booking.jobStarted',
+  'booking.jobCompleted',
+] as const satisfies readonly BookingPushType[];
+
 // Only ever sent to the rider, so an older payload without recipientRole
 // still has exactly one right destination.
 const RIDER_ONLY_TYPES: ReadonlySet<string> = new Set<RidePushType>([
@@ -57,6 +65,7 @@ const DRIVER_ONLY_TYPES: ReadonlySet<string> = new Set<RidePushType>([
 
 const RIDE_TYPES: ReadonlySet<string> = new Set<string>(RIDE_PUSH_TYPES);
 const USER_VEHICLE_TYPES: ReadonlySet<string> = new Set<string>(USER_VEHICLE_PUSH_TYPES);
+const BOOKING_TYPES: ReadonlySet<string> = new Set<string>(BOOKING_PUSH_TYPES);
 
 // Route params a destination screen reads to open a chat thread straight away
 // (see chatDeepLink.ts). Query params, not path segments: the active-ride lock
@@ -91,6 +100,11 @@ export function userVehicleRoute(userVehicleId: string): PushRoute {
   return { pathname: `/account/my-vehicles/${userVehicleId}`, params: {} };
 }
 
+/** A rental booking's detail screen (with its live driver map while the job is in progress). */
+export function rentalBookingRoute(bookingId: string): PushRoute {
+  return { pathname: `/account/inquiry/${bookingId}`, params: {} };
+}
+
 // Ids become path segments, so anything that isn't a plain uuid/cuid-style
 // token is treated as absent rather than built into a route.
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -119,6 +133,7 @@ function asRecord(data: unknown): Record<string, unknown> | null {
  * - a payload addressed to someone else (recipientUserId) → nothing — the
  *   device's token was re-pointed to this account after it was sent;
  * - userVehicle.* → that vehicle's screen;
+ * - booking.* (rental) → that booking's screen;
  * - a ride push with recipientRole (newer backend): DRIVER → their trip
  *   (with the rider's chat for chat_message), RIDER → their request (with
  *   the chat open for chat_message);
@@ -138,6 +153,10 @@ export function resolvePushTarget(rawData: unknown, currentUserId: string): Push
   if (USER_VEHICLE_TYPES.has(type)) {
     const userVehicleId = readId(data, 'userVehicleId');
     return userVehicleId ? { kind: 'route', route: userVehicleRoute(userVehicleId) } : { kind: 'none' };
+  }
+  if (BOOKING_TYPES.has(type)) {
+    const bookingId = readId(data, 'bookingId');
+    return bookingId ? { kind: 'route', route: rentalBookingRoute(bookingId) } : { kind: 'none' };
   }
   if (!RIDE_TYPES.has(type)) return { kind: 'none' };
 
@@ -260,6 +279,10 @@ export function pushInvalidationKeys(rawData: unknown, currentUserId: string): (
   if (recipientUserId !== undefined && recipientUserId !== currentUserId) return [];
 
   if (USER_VEHICLE_TYPES.has(type)) return [['userVehicles']];
+  if (BOOKING_TYPES.has(type)) {
+    const bookingId = readId(data, 'bookingId');
+    return [bookingId ? ['booking', bookingId] : ['booking'], ['myInquiries']];
+  }
   if (!RIDE_TYPES.has(type) || type === 'chat_message') return [];
 
   const tripId = readId(data, 'tripId');

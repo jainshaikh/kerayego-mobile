@@ -10,6 +10,7 @@ import { useTripRoomPresence } from '../../../features/liveRide/useTripRoomPrese
 import { useBlockBackButtonWhileActive } from '../../../features/liveRide/useBlockBackButtonWhileActive';
 import { AppRefreshControl, AppScreen, ErrorState, LoadingState } from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
+import { titleCase } from '../../../utils/format';
 import { serverClockFrom } from '../../../features/trips/driverCockpit/noShow';
 import { useRiderLiveRoute } from '../../../features/trip-inquiries/riderLiveTrip/useRiderLiveRoute';
 import { useRiderTripActions } from '../../../features/trip-inquiries/riderLiveTrip/useRiderTripActions';
@@ -22,6 +23,9 @@ import { OPEN_CHAT_PARAM } from '../../../features/notifications/pushRouting';
 import { riderChatAvailable, riderChatLinkDecision } from '../../../features/notifications/chatDeepLink';
 import { useChatDeepLink } from '../../../features/notifications/useChatDeepLink';
 import { ChatLinkUnavailableSheet } from '../../../features/notifications/ChatLinkUnavailableSheet';
+import { useRatingPrompt } from '../../../features/reviews/useRatingPrompt';
+import { riderTripPendingRating } from '../../../features/reviews/ratingPrompt';
+import { RateSheet } from '../../../features/reviews/components/RateSheet';
 
 const EDGES_WITH_HEADER: Edge[] = ['left', 'right', 'bottom'];
 // No native header above the screen while the ride is locked — the screen
@@ -108,6 +112,32 @@ export default function MyTripRequestDetailScreen() {
   };
   const chatLinkSheet = <ChatLinkUnavailableSheet notice={chatLink.notice} onClose={chatLink.dismissNotice} />;
 
+  // Rating the driver and the car once the ride is over for this rider
+  // (dropped off, or the trip completed): the sheet opens on its own once per
+  // seat on this device, and a card stays in the summary until it's rated.
+  const rideOver = stage === 'droppedOff' || stage === 'tripCompleted';
+  const rating = useRatingPrompt({
+    context: 'tripRider',
+    id: inquiry?.id,
+    rideOver,
+    pick: (eligible) => {
+      const pending = inquiry ? riderTripPendingRating(eligible, inquiry.id) : null;
+      return pending ? [pending] : [];
+    },
+    otherSheetOpen: riderActions.confirmOpen || chatProps.chatOpen || chatLink.notice !== null,
+  });
+  const ratePending = rating.pendings[0] ?? null;
+  const rateSheet = (
+    <RateSheet
+      visible={rating.sheetOpen}
+      pendings={rating.pendings}
+      title="Rate your trip"
+      subtitle={inquiry ? `${titleCase(inquiry.trip.originCity)} → ${titleCase(inquiry.trip.destinationCity)}` : undefined}
+      dismissLabel="Later"
+      onClose={rating.closeSheet}
+    />
+  );
+
   // One screen-level set of options for every state, so they can't conflict
   // as the views swap: while the ride is locked there's no header (so no
   // back chevron) and no swipe-back — the hardware back button is swallowed
@@ -145,8 +175,10 @@ export default function MyTripRequestDetailScreen() {
           serverClock={serverClock}
           refreshControl={<AppRefreshControl {...refresh} />}
           {...chatProps}
+          onRate={rideOver && ratePending ? rating.openSheet : undefined}
         />
         {chatLinkSheet}
+        {rateSheet}
       </AppScreen>
     );
   }

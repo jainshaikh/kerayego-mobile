@@ -9,10 +9,11 @@ export interface MarketMeta {
   currencyCode: string;
 }
 
+// Every price on KerayeGo is in PKR, whatever the market (owner decision 2026-10-31).
 export const MARKETS: Record<Market, MarketMeta> = {
   [Market.PK]: { code: Market.PK, label: 'Pakistan', currencyCode: 'PKR' },
-  [Market.SA]: { code: Market.SA, label: 'Saudi Arabia', currencyCode: 'SAR' },
-  [Market.AE]: { code: Market.AE, label: 'United Arab Emirates', currencyCode: 'AED' },
+  [Market.SA]: { code: Market.SA, label: 'Saudi Arabia', currencyCode: 'PKR' },
+  [Market.AE]: { code: Market.AE, label: 'United Arab Emirates', currencyCode: 'PKR' },
 };
 
 // Existing data predates the Market concept entirely, so PK (the original,

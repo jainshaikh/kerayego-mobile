@@ -7,8 +7,8 @@ import { currencyForMarket, DEFAULT_MARKET, MARKETS } from './markets';
 // lib/config/markets.ts) — no shared package between the repos.
 const BACKEND_MARKET_CURRENCIES: Record<Market, string> = {
   [Market.PK]: 'PKR',
-  [Market.SA]: 'SAR',
-  [Market.AE]: 'AED',
+  [Market.SA]: 'PKR',
+  [Market.AE]: 'PKR',
 };
 
 describe('markets', () => {

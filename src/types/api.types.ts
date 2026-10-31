@@ -65,6 +65,10 @@ export interface User {
   emailVerified: boolean;
   createdAt: string;
   updatedAt: string;
+  // True while KerayeGo checks the account (a phone number matched a blocked
+  // person): browsing works, but booking, posting trips, requesting seats and
+  // driving answer 403 IDENTITY_ON_HOLD. Optional for older backends.
+  identityHold?: boolean;
 }
 
 export interface AuthUser {
@@ -74,6 +78,8 @@ export interface AuthUser {
   role: Role;
   status: UserStatus;
   emailVerified: boolean;
+  // Same as User.identityHold.
+  identityHold?: boolean;
 }
 
 export interface LoginResult {
@@ -524,6 +530,22 @@ export interface UserVehicle {
 
 export interface UserVehicleDetail extends UserVehicle {
   documents: UserVehicleDocument[];
+  // The owner's CNIC as stored (12345-1234567-1) — owner reads only (GET/PATCH
+  // /my/vehicles/:id). Null for a vehicle registered before it was asked for;
+  // optional for backends that predate the field.
+  cnicNumber?: string | null;
+  // The car's history on KerayeGo across its plate (every listing, any owner —
+  // GET/PATCH /my/vehicles/:id). Null unless other listings of the plate have
+  // rides or reviews; optional for backends that predate the field.
+  plateHistory?: PlateHistory | null;
+}
+
+// Whole-plate totals (backend VehicleRegisterService.plateHistory). Never says
+// who listed the plate before.
+export interface PlateHistory {
+  rideCount: number;
+  reviewCount: number;
+  averageRating: number | null;
 }
 
 // ─── Trips (intercity, city-to-city) ─────────────────────────────────────────
@@ -681,3 +703,9 @@ export interface UserVehiclePushData {
   type: UserVehiclePushType;
   userVehicleId: string;
 }
+
+// Sent to a rental customer about their booking (kerayego-backend
+// src/modules/notifications/listeners/booking-push.listener.ts): a status the
+// business (or KerayeGo, or the auto-complete) set, and the driver's Start /
+// End. Data: { type, bookingId, recipientUserId, status? }.
+export type BookingPushType = 'booking.statusChanged' | 'booking.jobStarted' | 'booking.jobCompleted';

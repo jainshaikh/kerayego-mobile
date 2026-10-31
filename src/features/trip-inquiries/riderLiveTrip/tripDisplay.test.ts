@@ -69,8 +69,8 @@ function inquiry(overrides: Partial<TripInquiry> = {}): TripInquiry {
 describe('tripCurrency', () => {
   it("follows the vehicle's market (web's markets.ts)", () => {
     expect(tripCurrency(trip())).toBe('PKR');
-    expect(tripCurrency(trip({ userVehicle: { ...trip().userVehicle!, country: Market.SA } }))).toBe('SAR');
-    expect(tripCurrency(trip({ userVehicle: { ...trip().userVehicle!, country: Market.AE } }))).toBe('AED');
+    expect(tripCurrency(trip({ userVehicle: { ...trip().userVehicle!, country: Market.SA } }))).toBe('PKR');
+    expect(tripCurrency(trip({ userVehicle: { ...trip().userVehicle!, country: Market.AE } }))).toBe('PKR');
   });
 
   it('falls back to the default market on a return trip (no userVehicle)', () => {

@@ -20,6 +20,10 @@ export interface CreateUserVehiclePayload {
   year?: number;
   color?: string;
   plateNumber: string;
+  // The owner's CNIC, 12345-1234567-1 (backend CNIC_PATTERN). Optional in the
+  // DTO for older app builds; this app always sends it. 403 IDENTITY_BLOCKED
+  // when it matches a person KerayeGo blocked.
+  cnicNumber?: string;
   country?: Market; // backend defaults to PK
   images?: UserVehicleImageInput[];
   cnicFrontUrl: string;
@@ -49,6 +53,8 @@ export interface UpdateUserVehiclePayload {
   year?: number | null;
   color?: string | null;
   plateNumber?: string;
+  // Sent only when changed; same rules (and 403 IDENTITY_BLOCKED) as create.
+  cnicNumber?: string;
   country?: Market;
   // The COMPLETE new photo list in display order (first = poster); photos left
   // out are removed. A photo already on the vehicle is recognised by publicId;

@@ -9,6 +9,7 @@ import { DocumentStatus } from '../../../types/enums';
 import type { UserVehicleDocument, UserVehicleDocumentType } from '../../../types/api.types';
 import type { UserVehicleImageInput } from '../../../api/user-vehicles.api';
 import { userVehicleFormSchema, type UserVehicleFormValues } from '../../../schemas/user-vehicle.schema';
+import { formatCnicInput } from '../../../utils/cnic';
 import {
   USER_VEHICLE_DOCUMENT_LABELS,
   USER_VEHICLE_DOCUMENT_TYPES,
@@ -64,7 +65,9 @@ export function UserVehicleForm({
     formState: { errors },
   } = useForm<UserVehicleFormValues>({
     resolver: zodResolver(userVehicleFormSchema),
-    defaultValues: initialDraft?.values,
+    // cnicNumber starts as '' (not undefined) so an untouched field gets the
+    // "Enter your CNIC number" message rather than a type error.
+    defaultValues: initialDraft?.values ?? { cnicNumber: '' },
   });
 
   const missing = missingDocumentTypes(documents);
@@ -138,6 +141,24 @@ export function UserVehicleForm({
       <AppText variant="label" style={{ marginTop: spacing.md, marginBottom: spacing.sm }}>
         Verification documents
       </AppText>
+      <Controller
+        control={control}
+        name="cnicNumber"
+        render={({ field }) => (
+          <AppInput
+            label="Your CNIC number"
+            placeholder="12345-1234567-1"
+            keyboardType="number-pad"
+            // No maxLength: formatCnicInput keeps at most 13 digits, and a
+            // pasted number with spaces would otherwise be cut short.
+            value={field.value ?? ''}
+            onChangeText={(text) => field.onChange(formatCnicInput(text))}
+            onBlur={field.onBlur}
+            error={errors.cnicNumber?.message}
+            helperText="Only KerayeGo sees this. It's used to verify you."
+          />
+        )}
+      />
       {USER_VEHICLE_DOCUMENT_TYPES.map((type) => {
         const review = documentReview(type);
         return (

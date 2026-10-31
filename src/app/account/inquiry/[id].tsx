@@ -11,6 +11,10 @@ import { useTheme } from '../../../theme';
 import { bookingStatusDisplay, userBookingActions, BookingRequestStatus } from '../../../types/enums';
 import { formatDate, formatPrice } from '../../../utils/format';
 import { normalizeApiError } from '../../../api/errors';
+import { useRatingPrompt } from '../../../features/reviews/useRatingPrompt';
+import { customerBookingPendingRating } from '../../../features/reviews/ratingPrompt';
+import { RateSheet } from '../../../features/reviews/components/RateSheet';
+import { RatePromptCard } from '../../../features/reviews/components/RatePromptCard';
 
 export default function MyInquiryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -19,6 +23,21 @@ export default function MyInquiryDetailScreen() {
   const updateStatus = useUpdateBookingStatus(id as string);
   const [actionError, setActionError] = useState<string | null>(null);
   const refresh = usePullToRefresh(refetch);
+  // Rating the car and the driver once the rental is completed (the
+  // "Rental completed" push lands here): the sheet opens on its own once per
+  // booking on this device, and a card stays until it's rated.
+  const rentalOver = booking?.status === BookingRequestStatus.COMPLETED;
+  const rating = useRatingPrompt({
+    context: 'booking',
+    id: booking?.id,
+    rideOver: rentalOver,
+    pick: (eligible) => {
+      const pending = booking ? customerBookingPendingRating(eligible, booking.id) : null;
+      return pending ? [pending] : [];
+    },
+    otherSheetOpen: false,
+  });
+  const showRateCard = rentalOver && rating.pendings.length > 0;
 
   if (isLoading) return <LoadingState label="Loading inquiry..." />;
   if (isError || !booking) return <ErrorState message="Couldn't load this inquiry." onRetry={refetch} />;
@@ -47,6 +66,15 @@ export default function MyInquiryDetailScreen() {
         <AppText muted style={{ marginTop: spacing.xs }}>
           {booking.providerProfile.businessName}
         </AppText>
+
+        {showRateCard ? (
+          <RatePromptCard
+            title="Rate your rental"
+            body={(rating.pendings[0]?.targets.length ?? 0) > 1 ? 'How were the car and your driver?' : 'How was the car?'}
+            onRate={rating.openSheet}
+            style={{ marginTop: spacing.lg }}
+          />
+        ) : null}
 
         {/* The assigned driver live on a map, only while the rental runs. */}
         {booking.status === BookingRequestStatus.IN_PROGRESS ? <RentalLiveDriverCard bookingId={booking.id} /> : null}
@@ -105,6 +133,14 @@ export default function MyInquiryDetailScreen() {
           />
         ) : null}
       </ScrollView>
+      <RateSheet
+        visible={rating.sheetOpen}
+        pendings={rating.pendings}
+        title="Rate your rental"
+        subtitle={booking.vehicle.title}
+        dismissLabel="Later"
+        onClose={rating.closeSheet}
+      />
     </AppScreen>
   );
 }

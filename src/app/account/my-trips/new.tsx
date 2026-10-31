@@ -4,6 +4,8 @@ import { router } from 'expo-router';
 import { useCreateTrip } from '../../../features/trips/queries';
 import { TripForm } from '../../../features/trips/components/TripForm';
 import { normalizeApiError } from '../../../api/errors';
+import { IdentityHoldBanner } from '../../../features/identity/components/IdentityHoldBanner';
+import { useIdentityHold } from '../../../features/identity/useIdentityHold';
 import { AppScreen, AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripFormValues } from '../../../schemas/trip.schema';
@@ -12,6 +14,7 @@ export default function NewTripScreen() {
   const { spacing, colors } = useTheme();
   const createTrip = useCreateTrip();
   const [formError, setFormError] = useState<string | null>(null);
+  const hold = useIdentityHold();
 
   const handleSubmit = async (values: TripFormValues) => {
     setFormError(null);
@@ -39,7 +42,10 @@ export default function NewTripScreen() {
       });
       router.replace('/account/my-trips');
     } catch (error) {
-      setFormError(normalizeApiError(error).message);
+      const normalized = normalizeApiError(error);
+      // On hold: the banner shows the server's message instead.
+      if (hold.handleHoldError(normalized)) return;
+      setFormError(normalized.message);
     }
   };
 
@@ -48,6 +54,8 @@ export default function NewTripScreen() {
       <AppText muted style={{ marginBottom: spacing.lg }}>
         Your trip goes live immediately once posted.
       </AppText>
+
+      <IdentityHoldBanner message={hold.notice} />
 
       {formError ? (
         <AppText color={colors.danger} style={{ marginBottom: spacing.md }}>

@@ -30,7 +30,7 @@ avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help;
 §8) · `expo-location` + `expo-task-manager` (driver's and customer's background location) · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
 (present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 42 `*.test.ts(x)` files under `src/`, never under
+Jest** with the `jest-expo` preset (`npm test`): 47 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
 **The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; run the other files by name.
 
@@ -55,7 +55,8 @@ src/
     trip-inquiries/     queries.ts; riderLiveTrip/ (rider live-view hooks/components, see docs/ARCHITECTURE.md §10.1)
   storage/              secure-storage.ts (expo-secure-store), offline-trip-queue.ts (AsyncStorage),
                         active-driver-trip.ts / active-customer-share.ts (AsyncStorage: what each
-                        background location task reports for)
+                        background location task reports for), rating-prompt.ts (AsyncStorage: rides
+                        whose end-of-ride rating sheet already opened once)
   components/ui/        hand-rolled design system (AppButton, AppInput, AppScreen, StatusBadge, ...)
   components/maps/      NearMeControl, ResultsMap (search-results map, unrelated to LiveTripMap)
   theme/                tokens.ts + index.ts (useTheme) — "Sunset Coral" palette mirrored from web

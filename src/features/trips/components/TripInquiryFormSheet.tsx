@@ -9,6 +9,8 @@ import { AppButton, AppInput, AppSheet, AppText } from '../../../components/ui';
 import { tripInquirySchema, type TripInquiryFormValues } from '../../../schemas/trip-inquiry.schema';
 import { useCreateTripInquiry } from '../../trip-inquiries/queries';
 import { normalizeApiError } from '../../../api/errors';
+import { IdentityHoldBanner } from '../../identity/components/IdentityHoldBanner';
+import { useIdentityHold } from '../../identity/useIdentityHold';
 import type { TripStop } from '../../../types/api.types';
 
 interface TripInquiryFormSheetProps {
@@ -60,6 +62,7 @@ export function TripInquiryFormSheet({
   const [selectedPickupStopId, setSelectedPickupStopId] = useState<string | null>(null);
   const [selectedDropoffStopId, setSelectedDropoffStopId] = useState<string | null>(null);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const hold = useIdentityHold();
 
   const {
     control,
@@ -83,6 +86,7 @@ export function TripInquiryFormSheet({
   const handleClose = () => {
     setHasAttemptedSubmit(false);
     setSubmitError(null);
+    hold.clearRefusal();
     onClose();
   };
 
@@ -112,6 +116,8 @@ export function TripInquiryFormSheet({
         onAuthRequired();
         return;
       }
+      // On hold: the banner shows the server's message instead.
+      if (hold.handleHoldError(normalized)) return;
       if (
         normalized.message.toLowerCase().includes('own trip') ||
         normalized.message.toLowerCase().includes('cannot book a seat') ||
@@ -135,6 +141,8 @@ export function TripInquiryFormSheet({
   return (
     <AppSheet visible={visible} onClose={handleClose} title="Request seats" subtitle={routeLabel}>
       <ScrollView keyboardShouldPersistTaps="handled">
+        {/* A refused submit shows its banner down by the buttons instead. */}
+        <IdentityHoldBanner message={hold.refusedMessage ? null : hold.notice} />
         <AppText variant="label" style={{ marginBottom: spacing.xs }}>
           Seats needed
         </AppText>
@@ -278,6 +286,7 @@ export function TripInquiryFormSheet({
           )}
         />
 
+        <IdentityHoldBanner message={hold.refusedMessage} style={{ marginBottom: spacing.sm }} />
         {submitError ? (
           <AppText color={colors.danger} style={{ marginBottom: spacing.sm }}>
             {submitError}

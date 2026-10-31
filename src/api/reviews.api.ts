@@ -36,6 +36,11 @@ export interface RatingSummary {
   average: number | null;
   /** USER subjects only — count of accepted, already-departed trip requests on either side (rider or driver). */
   completedTripsCount?: number;
+  /**
+   * VEHICLE / USER_VEHICLE subjects only — the plate's completed rentals + carpool
+   * trips across every owner (0 for a car with no plate).
+   */
+  rideCount?: number;
 }
 
 // GET /reviews/my/eligible (ReviewsService.getMyEligible). bookingsAsCustomer
