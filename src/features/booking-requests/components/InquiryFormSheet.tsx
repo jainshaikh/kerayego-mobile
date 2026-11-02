@@ -10,6 +10,7 @@ import { LocationField } from '../../location/components/LocationField';
 import { bookingInquirySchema, type BookingInquiryFormValues } from '../../../schemas/booking.schema';
 import { useCreateBookingRequest } from '../queries';
 import { normalizeApiError } from '../../../api/errors';
+import { createBookingError } from '../bookingDisplay';
 import { IdentityHoldBanner } from '../../identity/components/IdentityHoldBanner';
 import { useIdentityHold } from '../../identity/useIdentityHold';
 import { RentalDurationType } from '../../../types/enums';
@@ -33,6 +34,7 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
   const { colors, spacing, radii } = useTheme();
   const createBooking = useCreateBookingRequest();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [duplicateActive, setDuplicateActive] = useState(false);
   const hold = useIdentityHold();
 
   const availableDurations = getAvailableDurations(vehiclePricing);
@@ -67,6 +69,7 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
 
   const onSubmit = async (values: BookingInquiryFormValues) => {
     setSubmitError(null);
+    setDuplicateActive(false);
     try {
       await createBooking.mutateAsync({
         vehicleId,
@@ -83,13 +86,24 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
       const normalized = normalizeApiError(error);
       // On hold: the banner shows the server's message instead.
       if (hold.handleHoldError(normalized)) return;
-      setSubmitError(normalized.message);
+      // A 409 "You already have an active inquiry for this vehicle": shown
+      // as-is, with a way to the open one.
+      const { message, duplicate } = createBookingError(normalized);
+      setSubmitError(message);
+      setDuplicateActive(duplicate);
     }
   };
 
   const handleClose = () => {
     hold.clearRefusal();
+    setSubmitError(null);
+    setDuplicateActive(false);
     onClose();
+  };
+
+  const openMyInquiries = () => {
+    handleClose();
+    router.push('/account/inquiries');
   };
 
   return (
@@ -257,6 +271,14 @@ export function InquiryFormSheet({ visible, onClose, vehicleId, vehicleTitle, ve
           <AppText color={colors.danger} style={{ marginBottom: spacing.sm }}>
             {submitError}
           </AppText>
+        ) : null}
+        {duplicateActive ? (
+          <AppButton
+            title="View my inquiries"
+            variant="outline"
+            onPress={openMyInquiries}
+            style={{ marginBottom: spacing.sm }}
+          />
         ) : null}
       </ScrollView>
 

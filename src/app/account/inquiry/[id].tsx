@@ -4,6 +4,8 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 
 import { useBookingRequest, useUpdateBookingStatus } from '../../../features/booking-requests/queries';
 import { RentalLiveDriverCard } from '../../../features/booking-requests/components/RentalLiveDriverCard';
+import { bookingStatusExplanation, upcomingRentalDriver } from '../../../features/booking-requests/bookingDisplay';
+import { DriverContactActions } from '../../../features/trip-inquiries/riderLiveTrip/DriverContactActions';
 import { CustomerLocationSharingCard } from '../../../features/liveRide/components/CustomerLocationSharingCard';
 import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
@@ -43,6 +45,8 @@ export default function MyInquiryDetailScreen() {
   if (isError || !booking) return <ErrorState message="Couldn't load this inquiry." onRetry={refetch} />;
 
   const availableActions = userBookingActions(booking.status);
+  const statusExplanation = bookingStatusExplanation(booking.status);
+  const upcomingDriver = upcomingRentalDriver(booking);
 
   const handleCancel = async () => {
     setActionError(null);
@@ -74,6 +78,34 @@ export default function MyInquiryDetailScreen() {
             onRate={rating.openSheet}
             style={{ marginTop: spacing.lg }}
           />
+        ) : null}
+
+        {statusExplanation ? (
+          <AppCard style={{ marginTop: spacing.lg }}>
+            <AppText muted>{statusExplanation}</AppText>
+          </AppCard>
+        ) : null}
+
+        {/* The assigned driver before the rental starts. Call/WhatsApp only
+            once the backend sends their phone (the driver accepted the job). */}
+        {upcomingDriver ? (
+          <AppCard style={{ marginTop: spacing.lg }}>
+            <AppText muted variant="caption">
+              Your driver
+            </AppText>
+            <AppText variant="subtitle" numberOfLines={1}>
+              {upcomingDriver.name}
+            </AppText>
+            {upcomingDriver.phone ? (
+              <View style={{ marginTop: spacing.md }}>
+                <DriverContactActions callNumber={upcomingDriver.phone} whatsappNumber={upcomingDriver.phone} />
+              </View>
+            ) : (
+              <AppText muted variant="caption" style={{ marginTop: 2 }}>
+                You can call your driver once they confirm the job.
+              </AppText>
+            )}
+          </AppCard>
         ) : null}
 
         {/* The assigned driver live on a map, only while the rental runs. */}

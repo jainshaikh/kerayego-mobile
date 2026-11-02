@@ -21,6 +21,28 @@ export interface NormalizedApiError {
   // 'FORBIDDEN'. Absent when there was no response or no code in it.
   code?: string;
   fieldErrors?: { field?: string; message: string }[];
+  // Seconds before the same request may be sent again, when a 429 says so:
+  // body.error.retryAfterSeconds (e.g. POST /users/me/phone/send-code's
+  // CODE_RESEND_TOO_SOON), else a top-level body.retryAfterSeconds, else the
+  // Retry-After header. Absent otherwise.
+  retryAfterSeconds?: number;
+}
+
+function positiveSeconds(value: unknown): number | undefined {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.ceil(n) : undefined;
+}
+
+function retryAfterOf(error: AxiosError): number | undefined {
+  const body = error.response?.data as
+    | { retryAfterSeconds?: unknown; error?: { retryAfterSeconds?: unknown } }
+    | undefined;
+  const headers = error.response?.headers as Record<string, unknown> | undefined;
+  return (
+    positiveSeconds(body?.error?.retryAfterSeconds) ??
+    positiveSeconds(body?.retryAfterSeconds) ??
+    positiveSeconds(headers?.['retry-after'])
+  );
 }
 
 function kindFromStatus(status: number): ApiErrorKind {
@@ -87,12 +109,14 @@ export function normalizeApiError(error: unknown): NormalizedApiError {
     }
 
     const code = typeof body?.error?.code === 'string' ? body.error.code : undefined;
+    const retryAfterSeconds = retryAfterOf(error);
 
     return {
       kind,
       statusCode: status,
       message,
       ...(code ? { code } : {}),
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
       fieldErrors: body?.error?.details,
     };
   }

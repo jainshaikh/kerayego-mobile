@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import {
+  BOOKING_REMINDER_PUSH_TYPES,
   RIDE_PUSH_DATA_VERSION,
   RIDE_PUSH_TYPES,
   USER_VEHICLE_PUSH_TYPES,
@@ -20,8 +21,9 @@ const TRIP = 'trip-1';
 const INQ = 'inq-1';
 
 // Hand-copied from kerayego-backend src/modules/notifications/ride-push-data.ts
-// (RIDE_PUSH_TYPES, RIDE_PUSH_DATA_VERSION) and
-// src/modules/user-vehicles/user-vehicle-events.ts (USER_VEHICLE_DECISION_EVENTS).
+// (RIDE_PUSH_TYPES, RIDE_PUSH_DATA_VERSION),
+// src/modules/user-vehicles/user-vehicle-events.ts (USER_VEHICLE_DECISION_EVENTS) and
+// src/modules/reminders/reminders.service.ts (REMINDER_PUSH_TYPES.bookingShareLocation).
 const BACKEND_RIDE_PUSH_TYPES = [
   'tripInquiry.created',
   'tripInquiry.accepted',
@@ -35,7 +37,9 @@ const BACKEND_RIDE_PUSH_TYPES = [
   'trip.riderNoShow',
   'trip.nextPickupApproaching',
   'trip.completed',
+  'trip.shareLocation',
 ];
+const BACKEND_BOOKING_REMINDER_PUSH_TYPES = ['booking.shareLocation'];
 const BACKEND_USER_VEHICLE_PUSH_TYPES = [
   'userVehicle.approved',
   'userVehicle.rejected',
@@ -72,6 +76,7 @@ describe('push type mirrors', () => {
   it('match the backend constants exactly', () => {
     expect([...RIDE_PUSH_TYPES]).toEqual(BACKEND_RIDE_PUSH_TYPES);
     expect([...USER_VEHICLE_PUSH_TYPES]).toEqual(BACKEND_USER_VEHICLE_PUSH_TYPES);
+    expect([...BOOKING_REMINDER_PUSH_TYPES]).toEqual(BACKEND_BOOKING_REMINDER_PUSH_TYPES);
     expect(RIDE_PUSH_DATA_VERSION).toBe('2');
   });
 });
@@ -215,6 +220,16 @@ describe('resolvePushTarget — rental bookings', () => {
     });
   });
 
+  it('opens the booking for the share-your-location reminder', () => {
+    expect(
+      resolvePushTarget({ type: 'booking.shareLocation', bookingId: 'bk-1', recipientUserId: ME }, ME),
+    ).toEqual(route('/account/inquiry/bk-1'));
+    expect(resolvePushTarget({ type: 'booking.shareLocation', bookingId: 'bk-1', recipientUserId: OTHER }, ME)).toEqual({
+      kind: 'none',
+    });
+    expect(resolvePushTarget({ type: 'booking.shareLocation' }, ME)).toEqual({ kind: 'none' });
+  });
+
   it('ignores the Partner app’s booking pushes', () => {
     expect(resolvePushTarget({ type: 'booking.created', bookingId: 'bk-1' }, ME)).toEqual({ kind: 'none' });
   });
@@ -242,6 +257,27 @@ describe('resolvePushTarget — anything else just opens the app', () => {
 
   it('ignores an unrecognised recipientRole and falls back to the type', () => {
     expect(resolvePushTarget({ ...v2('trip.completed', 'RIDER'), recipientRole: 'ADMIN' }, ME)).toEqual(route(RIDER_REQUEST));
+  });
+});
+
+describe('resolvePushTarget — trip.shareLocation (the rider’s share-your-location reminder)', () => {
+  it('opens the rider’s request, where sharing starts', () => {
+    expect(resolvePushTarget(v2('trip.shareLocation', 'RIDER'), ME)).toEqual(route(RIDER_REQUEST));
+  });
+
+  it('opens the rider’s request without recipientRole too (rider-only type)', () => {
+    expect(resolvePushTarget({ type: 'trip.shareLocation', tripId: TRIP, inquiryId: INQ }, ME)).toEqual(
+      route(RIDER_REQUEST),
+    );
+  });
+
+  it('does nothing for someone else’s reminder, or without a request id', () => {
+    expect(resolvePushTarget({ ...v2('trip.shareLocation', 'RIDER'), recipientUserId: OTHER }, ME)).toEqual({
+      kind: 'none',
+    });
+    expect(resolvePushTarget({ type: 'trip.shareLocation', recipientRole: 'RIDER', tripId: TRIP }, ME)).toEqual({
+      kind: 'none',
+    });
   });
 });
 
@@ -386,6 +422,20 @@ describe('pushInvalidationKeys', () => {
     expect(pushInvalidationKeys({ type: 'booking.statusChanged', bookingId: 'bk-1', recipientUserId: ME }, ME)).toEqual([
       ['booking', 'bk-1'],
       ['myInquiries'],
+    ]);
+  });
+
+  it('also refreshes the open sharing windows for a share-your-location reminder', () => {
+    expect(pushInvalidationKeys({ type: 'booking.shareLocation', bookingId: 'bk-1', recipientUserId: ME }, ME)).toEqual([
+      ['booking', 'bk-1'],
+      ['myInquiries'],
+      ['myLocationSharing'],
+    ]);
+    expect(pushInvalidationKeys(v2('trip.shareLocation', 'RIDER'), ME)).toEqual([
+      ['tripInquiry', INQ],
+      ['myTripInquiries'],
+      ['myActiveRide'],
+      ['myLocationSharing'],
     ]);
   });
 

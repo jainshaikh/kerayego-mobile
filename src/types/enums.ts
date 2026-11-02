@@ -40,6 +40,9 @@ export enum BookingRequestStatus {
   REJECTED = 'REJECTED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
+  // Set only by the backend's cron: an ACCEPTED booking whose booked period
+  // ended without the job being started. Terminal, never rateable.
+  NOT_STARTED = 'NOT_STARTED',
 }
 
 export enum RentalDurationType {
@@ -157,6 +160,7 @@ export const bookingStatusMeta: Record<
   [BookingRequestStatus.REJECTED]: { label: 'Rejected', tone: 'danger' },
   [BookingRequestStatus.CANCELLED]: { label: 'Cancelled', tone: 'neutral' },
   [BookingRequestStatus.COMPLETED]: { label: 'Completed', tone: 'complete' },
+  [BookingRequestStatus.NOT_STARTED]: { label: 'Not started', tone: 'neutral' },
 };
 
 export const vehicleStatusMeta: Record<
@@ -216,6 +220,8 @@ export const BOOKING_TRANSITIONS: Record<
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.CANCELLED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.COMPLETED]: { allowedBy: [], nextStates: [] },
+  // Set only by the backend's cron — nobody moves a booking into or out of it.
+  [BookingRequestStatus.NOT_STARTED]: { allowedBy: [], nextStates: [] },
 };
 
 /** Actions a USER may take from a given booking status (mirrors backend, minus ADMIN-only moves). */

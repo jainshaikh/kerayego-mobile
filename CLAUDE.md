@@ -30,7 +30,7 @@ avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help;
 §8) · `expo-location` + `expo-task-manager` (driver's and customer's background location) · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
 (present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 47 `*.test.ts(x)` files under `src/`, never under
+Jest** with the `jest-expo` preset (`npm test`): 51 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
 **The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; run the other files by name.
 
@@ -68,8 +68,8 @@ example/                Leftover default Expo template scaffold — NOT part of 
 
 Routes (Expo Router; parenthesized segments are route groups, stripped from the resolved URL):
 
-- `(auth)/` — login, register, forgot-password, reset-password, verify-email. No guard redirects
-  authenticated users away from these.
+- `(auth)/` — login, register (both by emailed 6-digit code — the app has no passwords), verify-email.
+  No guard redirects authenticated users away from these.
 - `(public)/(tabs)/` — the real bottom tab bar (`expo-router`'s `Tabs`, 4 screens: `index` (resolves to
   `/`, "Vehicles"), `trips`, `providers`, `profile`). Everything here is public/unauthenticated-readable.
   `(public)/vehicle/[id]`, `provider/[id]`, `trip/[id]` are detail screens (looked up by **slug** despite
@@ -85,7 +85,12 @@ between sub-views. The real bottom tab navigator is `(public)/(tabs)/_layout.tsx
 
 Three cooperating pieces, mirroring the web app's model: an **in-memory-only access token**
 (`api/client.ts`, wiped on app kill), a **refresh token in `expo-secure-store`** (the only thing that
-survives restarts), and `AuthContext`'s in-memory `user` + `isBootstrapping` state. On launch: read the
+survives restarts), and `AuthContext`'s in-memory `user` + `isBootstrapping` state. **Sign-in is by
+emailed code only** (A11, A21): `POST /auth/code/request` → `POST /auth/code/verify` (same session
+delivery as the old password login, plus `deletionCancelled`, shown once by `DeletionCancelledSheet`),
+then `GET /users/me` is re-read (a code verifies the email); sign-up is `POST /auth/register` without a
+password, then the same code step (`features/auth/`). The backend's password endpoints exist for old app
+versions only — never call them. On launch: read the
 stored refresh token → `POST /auth/refresh` → `GET /users/me` → register push token (fire-and-forget).
 The axios response interceptor does single-flight 401-refresh-and-retry with a subscriber queue for
 concurrent requests. `X-Client-Type: mobile` is sent on every request so the backend returns the refresh
@@ -99,6 +104,17 @@ to `/verify-email`. **Unresolved contradiction in the source itself**: this layo
 `USER` and `PROVIDER` both use the account stack, while `features/reviews/components/EligibleReviewsList.tsx`
 comments "mobile has no provider role" — the two claims conflict and neither could be confirmed as
 authoritative from source alone.
+
+**WhatsApp phone verification** (2026-11-01, `features/phone-verification/`): whenever
+`user.mustVerifyPhone` is true (the backend's verdict — never work it out in the app), the root layout's
+`PhoneVerificationGate` covers the app with a blocking "Verify your mobile number" screen (exits: verify
+or Sign out) — after sign-in, sign-up, session restore, and after any 403 `PHONE_NOT_VERIFIED`, which
+`client.ts` reports to `AuthProvider` (`setOnPhoneNotVerified`) to re-read `/users/me`. Number →
+`POST /users/me/phone/send-code` → 6-digit code → `POST /users/me/phone/verify`, whose user replaces the
+stored one (`replaceUser`). The phone is no longer edited by `PATCH /users/me`: the profile screen
+("Profile & settings") shows Verified / "Not verified · Verify" and changes it through the same flow in
+an `AppSheet`, plus the optimistic "WhatsApp updates" switch (`PATCH /users/me { whatsappUpdates }`).
+Only a 401 ever triggers a token refresh. Details: `docs/ARCHITECTURE.md` §6.
 
 Push tokens are the **native platform token** (FCM on Android / APNs on iOS, via
 `Notifications.getDevicePushTokenAsync()`) — **not** the Expo push token — registered/unregistered

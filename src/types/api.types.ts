@@ -15,7 +15,7 @@ import type {
 
 // ─── API Envelope ────────────────────────────────────────────────────────────
 // Backend TransformInterceptor wraps every response as { success: true, data, message?, meta? }.
-// Message-only endpoints (register/logout/verify-email/forgot-password/reset-password) do NOT
+// Message-only endpoints (register/code-request/logout/verify-email) do NOT
 // return a top-level `message` — the whole { message } object gets nested under `data` instead,
 // because the controller's own object had no `data` key for the interceptor to unwrap.
 // Type each endpoint's response according to what the controller actually returns (see auth.api.ts).
@@ -69,6 +69,17 @@ export interface User {
   // person): browsing works, but booking, posting trips, requesting seats and
   // driving answer 403 IDENTITY_ON_HOLD. Optional for older backends.
   identityHold?: boolean;
+  // WhatsApp phone verification (2026-11). Optional for older backends —
+  // treat a missing mustVerifyPhone as false, a missing whatsappUpdates as true.
+  // phone !== null and verified by a WhatsApp code.
+  phoneVerified?: boolean;
+  // The backend's verdict on the gate (its PHONE_VERIFICATION_REQUIRED flag,
+  // never ADMIN, phone not verified): true → the blocking "Verify your mobile
+  // number" screen. The app never works this out for itself.
+  mustVerifyPhone?: boolean;
+  // The "WhatsApp updates" setting — booking and trip notifications on
+  // WhatsApp (the verification code itself always goes out).
+  whatsappUpdates?: boolean;
 }
 
 export interface AuthUser {
@@ -80,15 +91,69 @@ export interface AuthUser {
   emailVerified: boolean;
   // Same as User.identityHold.
   identityHold?: boolean;
+  // Same as the User fields of the same names.
+  phoneVerified?: boolean;
+  mustVerifyPhone?: boolean;
+  whatsappUpdates?: boolean;
 }
 
+// POST /auth/code/verify (the same session shape the backend's old password
+// /auth/login returns).
 export interface LoginResult {
   accessToken: string;
   user: AuthUser;
+  // True when this sign-in cancelled a pending account deletion (A51) — the
+  // app says so once. Optional for older backends.
+  deletionCancelled?: boolean;
   // Only present for mobile clients (x-client-type: mobile header) — web relies on the
   // httpOnly cookie instead. See kerayego-backend auth.controller.ts.
   refreshToken?: string;
 }
+
+// POST /auth/code/request — always this answer, account or not.
+export interface LoginCodeRequestResult {
+  message: string;
+  resendAfterSeconds: number;
+}
+
+// POST /auth/register without a password: codeSent is true and the code
+// screen follows (POST /auth/code/verify).
+export interface RegisterResult {
+  user: User;
+  message: string;
+  codeSent: boolean;
+}
+
+// POST /users/me/phone/send-code — a code is on its way on WhatsApp, or (no
+// send) the number is already this account's verified one.
+export type PhoneSendCodeResult =
+  | {
+      phone: string; // E.164, e.g. "+923001234567"
+      expiresInMinutes: number;
+      resendInSeconds: number;
+      channel: 'whatsapp';
+      alreadyVerified?: false;
+    }
+  | { phone: string; alreadyVerified: true };
+
+// Error codes (body.error.code) of the WhatsApp phone verification endpoints
+// and its gate — mirrors kerayego-backend's users/phone-verification code.
+export const PhoneErrorCode = {
+  /** 409 send-code / verify — another account has verified this number. */
+  PHONE_TAKEN: 'PHONE_TAKEN',
+  /** 429 send-code — within 60 s of the last code; carries retryAfterSeconds. */
+  CODE_RESEND_TOO_SOON: 'CODE_RESEND_TOO_SOON',
+  /** 429 send-code — 10 codes in 24 h for this account. */
+  CODE_LIMIT_REACHED: 'CODE_LIMIT_REACHED',
+  /** 502 send-code — Meta refused the message (its message says what to do). */
+  WHATSAPP_SEND_FAILED: 'WHATSAPP_SEND_FAILED',
+  /** 503 send-code — WhatsApp isn't set up on the server. */
+  WHATSAPP_UNAVAILABLE: 'WHATSAPP_UNAVAILABLE',
+  /** 400 verify — wrong or expired code (400, never 401: no token refresh). */
+  CODE_INVALID: 'CODE_INVALID',
+  /** 403 from any gated endpoint while user.mustVerifyPhone. */
+  PHONE_NOT_VERIFIED: 'PHONE_NOT_VERIFIED',
+} as const;
 
 export interface RefreshResult {
   accessToken: string;
@@ -357,6 +422,19 @@ export interface BookingRequest {
   };
   providerProfile: { id: string; businessName: string };
   statusHistory: BookingStatusHistoryEntry[];
+  // The business's driver for this rental, once assigned. For the customer
+  // `phone` is null unless the booking is IN_PROGRESS, or ACCEPTED with the
+  // driver having accepted the job (backend D14) — hide Call/WhatsApp then.
+  // Optional: absent from an older backend.
+  assignedDriver?: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+    phone: string | null;
+  } | null;
+  // The driver's answer to the job: PENDING / ACCEPTED / DECLINED, null when
+  // no driver is assigned.
+  driverJobStatus?: 'PENDING' | 'ACCEPTED' | 'DECLINED' | null;
 }
 
 // ─── Live location (customer sharing + rental live driver) ──────────────────
@@ -418,6 +496,7 @@ export interface BookingLiveDriver {
   driver: {
     id: string;
     name: string;
+    // null unless IN_PROGRESS, or ACCEPTED with the job accepted (D14).
     phone: string | null;
     avatarUrl: string | null;
     verificationStatus: string | null;
@@ -669,7 +748,9 @@ export type RidePushType =
   | 'trip.droppedOff'
   | 'trip.riderNoShow'
   | 'trip.nextPickupApproaching'
-  | 'trip.completed';
+  | 'trip.completed'
+  // "Share your location" reminder as the rider's sharing window opens (A44).
+  | 'trip.shareLocation';
 
 // A newer backend marks its payloads v: '2' and always sends recipientRole,
 // recipientUserId, tripId, tripInquiryId and its legacy mirror inquiryId. An
@@ -709,3 +790,9 @@ export interface UserVehiclePushData {
 // business (or KerayeGo, or the auto-complete) set, and the driver's Start /
 // End. Data: { type, bookingId, recipientUserId, status? }.
 export type BookingPushType = 'booking.statusChanged' | 'booking.jobStarted' | 'booking.jobCompleted';
+
+// "Share your location" reminder to a rental customer when their sharing
+// window opens (kerayego-backend src/modules/reminders/reminders.service.ts
+// REMINDER_PUSH_TYPES, plan A44). Data: { type, bookingId, recipientUserId }.
+// The carpool rider's one, trip.shareLocation, is a ride push (RidePushType).
+export type BookingReminderPushType = 'booking.shareLocation';

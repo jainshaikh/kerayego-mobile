@@ -20,6 +20,8 @@ import { useGlobalOfflineQueueFlush } from '../features/trips/offlineSync';
 import { useDriverLocationReconcile } from '../features/liveRide/backgroundLocation/useDriverLocationReconcile';
 import { useCustomerLocationReconcile } from '../features/liveRide/backgroundLocation/useCustomerLocationReconcile';
 import { CustomerLocationPermissionSheet } from '../features/liveRide/components/CustomerLocationPermissionSheet';
+import { DeletionCancelledSheet } from '../features/auth/components/DeletionCancelledSheet';
+import { PhoneVerificationGate } from '../features/phone-verification/components/PhoneVerificationGate';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 configureNotificationHandler();
@@ -108,6 +110,9 @@ function RootNavigator() {
         <Stack.Screen name="+not-found" />
       </Stack>
       <CustomerLocationPermissionSheet prompt={customerLocationPrompt} />
+      <DeletionCancelledSheet />
+      {/* Last, so it covers everything: blocking while user.mustVerifyPhone. */}
+      <PhoneVerificationGate />
     </>
   );
 }

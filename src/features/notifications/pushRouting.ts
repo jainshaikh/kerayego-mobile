@@ -1,6 +1,12 @@
 import type { ApiErrorKind } from '../../api/errors';
 import type { MyActiveRide } from '../../api/trips.api';
-import type { BookingPushType, PushRecipientRole, RidePushType, UserVehiclePushType } from '../../types/api.types';
+import type {
+  BookingPushType,
+  BookingReminderPushType,
+  PushRecipientRole,
+  RidePushType,
+  UserVehiclePushType,
+} from '../../types/api.types';
 
 // Where a tapped push should take the user — pure, so the whole routing table
 // is unit-tested (pushRouting.test.ts). usePushTapNavigation does the actual
@@ -21,6 +27,7 @@ export const RIDE_PUSH_TYPES = [
   'trip.riderNoShow',
   'trip.nextPickupApproaching',
   'trip.completed',
+  'trip.shareLocation',
 ] as const satisfies readonly RidePushType[];
 
 export const RIDE_PUSH_DATA_VERSION = '2';
@@ -43,6 +50,12 @@ export const BOOKING_PUSH_TYPES = [
   'booking.jobCompleted',
 ] as const satisfies readonly BookingPushType[];
 
+// Mirrors REMINDER_PUSH_TYPES.bookingShareLocation in kerayego-backend
+// src/modules/reminders/reminders.service.ts: "share your location" as a
+// rental customer's sharing window opens — tapping it opens the booking,
+// where sharing starts. (Its carpool twin, trip.shareLocation, is a ride push.)
+export const BOOKING_REMINDER_PUSH_TYPES = ['booking.shareLocation'] as const satisfies readonly BookingReminderPushType[];
+
 // Only ever sent to the rider, so an older payload without recipientRole
 // still has exactly one right destination.
 const RIDER_ONLY_TYPES: ReadonlySet<string> = new Set<RidePushType>([
@@ -54,6 +67,7 @@ const RIDER_ONLY_TYPES: ReadonlySet<string> = new Set<RidePushType>([
   'trip.riderNoShow',
   'trip.nextPickupApproaching',
   'trip.completed',
+  'trip.shareLocation',
 ]);
 
 // Only ever sent to the driver — but an older payload carried no tripId, so
@@ -65,7 +79,12 @@ const DRIVER_ONLY_TYPES: ReadonlySet<string> = new Set<RidePushType>([
 
 const RIDE_TYPES: ReadonlySet<string> = new Set<string>(RIDE_PUSH_TYPES);
 const USER_VEHICLE_TYPES: ReadonlySet<string> = new Set<string>(USER_VEHICLE_PUSH_TYPES);
-const BOOKING_TYPES: ReadonlySet<string> = new Set<string>(BOOKING_PUSH_TYPES);
+const BOOKING_TYPES: ReadonlySet<string> = new Set<string>([...BOOKING_PUSH_TYPES, ...BOOKING_REMINDER_PUSH_TYPES]);
+// The reminders that ask the customer to share their location — a tap also
+// re-reads their open sharing windows.
+const SHARE_LOCATION_TYPES: ReadonlySet<string> = new Set<string>(['booking.shareLocation', 'trip.shareLocation']);
+// Mirrors MY_LOCATION_SHARING_KEY (features/liveRide/queries.ts).
+const LOCATION_SHARING_KEY = ['myLocationSharing'] as const;
 
 // Route params a destination screen reads to open a chat thread straight away
 // (see chatDeepLink.ts). Query params, not path segments: the active-ride lock
@@ -133,7 +152,8 @@ function asRecord(data: unknown): Record<string, unknown> | null {
  * - a payload addressed to someone else (recipientUserId) → nothing — the
  *   device's token was re-pointed to this account after it was sent;
  * - userVehicle.* → that vehicle's screen;
- * - booking.* (rental) → that booking's screen;
+ * - booking.* (rental, including the booking.shareLocation reminder) → that
+ *   booking's screen (where the customer's location sharing starts);
  * - a ride push with recipientRole (newer backend): DRIVER → their trip
  *   (with the rider's chat for chat_message), RIDER → their request (with
  *   the chat open for chat_message);
@@ -281,7 +301,8 @@ export function pushInvalidationKeys(rawData: unknown, currentUserId: string): (
   if (USER_VEHICLE_TYPES.has(type)) return [['userVehicles']];
   if (BOOKING_TYPES.has(type)) {
     const bookingId = readId(data, 'bookingId');
-    return [bookingId ? ['booking', bookingId] : ['booking'], ['myInquiries']];
+    const keys: (readonly unknown[])[] = [bookingId ? ['booking', bookingId] : ['booking'], ['myInquiries']];
+    return SHARE_LOCATION_TYPES.has(type) ? [...keys, LOCATION_SHARING_KEY] : keys;
   }
   if (!RIDE_TYPES.has(type) || type === 'chat_message') return [];
 
@@ -302,7 +323,7 @@ export function pushInvalidationKeys(rawData: unknown, currentUserId: string): (
     ['myTrips'],
     ['myActiveRide'],
   ];
-  if (role === 'RIDER') return riderKeys;
+  if (role === 'RIDER') return SHARE_LOCATION_TYPES.has(type) ? [...riderKeys, LOCATION_SHARING_KEY] : riderKeys;
   if (role === 'DRIVER') return driverKeys;
   // tripInquiry.accepted from an older backend reached both sides alike.
   return [...riderKeys, ...driverKeys.filter((key) => key[0] !== 'myActiveRide')];

@@ -19,7 +19,7 @@ export default function AccountLayout() {
       <Stack.Screen name="saved" options={{ title: 'Saved Vehicles' }} />
       <Stack.Screen name="inquiries" options={{ title: 'My Inquiries' }} />
       <Stack.Screen name="inquiry/[id]" options={{ title: 'Inquiry' }} />
-      <Stack.Screen name="profile" options={{ title: 'Edit Profile' }} />
+      <Stack.Screen name="profile" options={{ title: 'Profile & Settings' }} />
       <Stack.Screen name="my-vehicles/index" options={{ title: 'My Vehicles' }} />
       <Stack.Screen name="my-vehicles/new" options={{ title: 'Register Vehicle' }} />
       <Stack.Screen name="my-vehicles/[id]" options={{ title: 'Vehicle Details' }} />

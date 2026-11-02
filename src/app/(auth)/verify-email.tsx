@@ -11,7 +11,7 @@ const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function VerifyEmailScreen() {
   const { spacing, colors } = useTheme();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
   const { token: tokenParam } = useLocalSearchParams<{ token?: string }>();
   const [manualToken, setManualToken] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(tokenParam ? 'loading' : 'idle');
@@ -44,6 +44,9 @@ export default function VerifyEmailScreen() {
     setStatus('loading');
     try {
       const result = await authApi.verifyEmail(token);
+      // Signed in: read the user back, so the account screens stop sending
+      // them here (emailVerified is now true).
+      if (isAuthenticated) await refreshUser().catch(() => {});
       setMessage(result.message);
       setStatus('success');
     } catch (error) {
@@ -61,6 +64,7 @@ export default function VerifyEmailScreen() {
     async function verifyOnMount(token: string) {
       try {
         const result = await authApi.verifyEmail(token);
+        if (isAuthenticated) await refreshUser().catch(() => {});
         if (cancelled) return;
         setMessage(result.message);
         setStatus('success');
@@ -75,6 +79,8 @@ export default function VerifyEmailScreen() {
     return () => {
       cancelled = true;
     };
+    // Only for the link's token — not again when the session changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenParam]);
 
   if (status === 'loading') return <LoadingState label="Verifying your email..." />;
@@ -88,7 +94,11 @@ export default function VerifyEmailScreen() {
         <AppText muted style={{ marginBottom: spacing.xl }}>
           {message}
         </AppText>
-        <AppButton title="Go to login" onPress={() => router.replace('/login')} />
+        {isAuthenticated ? (
+          <AppButton title="Continue" onPress={() => router.replace('/')} />
+        ) : (
+          <AppButton title="Go to login" onPress={() => router.replace('/login')} />
+        )}
       </AppScreen>
     );
   }

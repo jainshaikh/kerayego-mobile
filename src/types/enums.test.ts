@@ -39,7 +39,16 @@ const BACKEND_ENUM_VALUES = {
   TripEventType: ['START', 'ARRIVED', 'PICKUP', 'NO_SHOW', 'DROPOFF', 'END', 'DEPARTED'],
   PickupSource: ['DRIVER_TAP', 'AUTO_ON_TRIP_END'],
   UserVehicleStatus: ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SUSPENDED'],
-  BookingRequestStatus: ['PENDING', 'CONTACTED', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+  BookingRequestStatus: [
+    'PENDING',
+    'CONTACTED',
+    'ACCEPTED',
+    'IN_PROGRESS',
+    'REJECTED',
+    'CANCELLED',
+    'COMPLETED',
+    'NOT_STARTED',
+  ],
   UserStatus: ['ACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION', 'PENDING_DELETION', 'DELETED'],
   VehicleStatus: ['DRAFT', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'ARCHIVED', 'SUSPENDED'],
   Market: ['PK', 'SA', 'AE'],
@@ -119,6 +128,7 @@ const BACKEND_BOOKING_TRANSITIONS: typeof BOOKING_TRANSITIONS = {
   [BookingRequestStatus.REJECTED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.CANCELLED]: { allowedBy: [], nextStates: [] },
   [BookingRequestStatus.COMPLETED]: { allowedBy: [], nextStates: [] },
+  [BookingRequestStatus.NOT_STARTED]: { allowedBy: [], nextStates: [] },
 };
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -166,6 +176,10 @@ describe('status display meta', () => {
   it('bookingStatusDisplay falls back to the raw value for a status this build does not know', () => {
     expect(bookingStatusDisplay(BookingRequestStatus.IN_PROGRESS)).toEqual({ label: 'In Progress', tone: 'info' });
     expect(bookingStatusDisplay('SOME_FUTURE_STATUS')).toEqual({ label: 'SOME_FUTURE_STATUS', tone: 'neutral' });
+  });
+
+  it('shows NOT_STARTED as a grey "Not started"', () => {
+    expect(bookingStatusDisplay(BookingRequestStatus.NOT_STARTED)).toEqual({ label: 'Not started', tone: 'neutral' });
   });
 });
 
@@ -271,6 +285,10 @@ describe('userBookingActions', () => {
         status === BookingRequestStatus.PENDING ? [BookingRequestStatus.CANCELLED] : [],
       );
     }
+  });
+
+  it('offers nothing on a NOT_STARTED booking (terminal, set only by the backend)', () => {
+    expect(userBookingActions(BookingRequestStatus.NOT_STARTED)).toEqual([]);
   });
 });
 

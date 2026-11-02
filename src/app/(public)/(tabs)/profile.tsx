@@ -93,7 +93,7 @@ function CustomerProfile({ user }: { user: { name: string; email: string } }) {
           <MenuRow label="My trips" onPress={() => router.push('/account/my-trips')} />
           <MenuRow label="Trip requests" onPress={() => router.push('/account/trip-requests')} />
           <MenuRow label="Ratings & reviews" onPress={() => router.push('/account/reviews')} />
-          <MenuRow label="Edit profile" onPress={() => router.push('/account/profile')} />
+          <MenuRow label="Profile & settings" onPress={() => router.push('/account/profile')} />
         </View>
       </AppCard>
 

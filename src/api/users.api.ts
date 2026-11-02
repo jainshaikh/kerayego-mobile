@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ApiResponse, PaginationMeta, SavedVehicle, User } from '../types/api.types';
+import type { ApiResponse, PaginationMeta, PhoneSendCodeResult, SavedVehicle, User } from '../types/api.types';
 
 export const usersApi = {
   getMe: async () => {
@@ -7,8 +7,32 @@ export const usersApi = {
     return res.data.data;
   },
 
-  updateMe: async (data: { name?: string; phone?: string }) => {
+  // The mobile number is not changed here any more — only through
+  // sendPhoneCode → verifyPhoneCode (the backend still accepts `phone` for
+  // old app versions, and clears its verification when it changes).
+  updateMe: async (data: { name?: string; whatsappUpdates?: boolean }) => {
     const res = await apiClient.patch<ApiResponse<User>>('/users/me', data);
+    return res.data.data;
+  },
+
+  /**
+   * POST /users/me/phone/send-code — sends a 6-digit code on WhatsApp to
+   * `phone` (any format the backend accepts: 0300…, +92…). Errors: 400
+   * invalid number, 409 PHONE_TAKEN, 429 CODE_RESEND_TOO_SOON /
+   * CODE_LIMIT_REACHED, 502 WHATSAPP_SEND_FAILED, 503 WHATSAPP_UNAVAILABLE.
+   */
+  sendPhoneCode: async (phone: string) => {
+    const res = await apiClient.post<ApiResponse<PhoneSendCodeResult>>('/users/me/phone/send-code', { phone });
+    return res.data.data;
+  },
+
+  /**
+   * POST /users/me/phone/verify — the code makes the number this account's
+   * verified phone; answers with the updated user. 400 CODE_INVALID for a
+   * wrong/expired code, 409 PHONE_TAKEN.
+   */
+  verifyPhoneCode: async (code: string) => {
+    const res = await apiClient.post<ApiResponse<User>>('/users/me/phone/verify', { code });
     return res.data.data;
   },
 

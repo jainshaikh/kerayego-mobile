@@ -9,7 +9,7 @@ import {
   getRefreshToken,
   setRefreshToken,
 } from '../storage/secure-storage';
-import type { ApiResponse, RefreshResult } from '../types/api.types';
+import { PhoneErrorCode, type ApiErrorBody, type ApiResponse, type RefreshResult } from '../types/api.types';
 
 // Access token lives in memory only — never persisted, so it disappears on app kill.
 // This mirrors the web client's approach; the refresh token (in SecureStore) is what
@@ -41,6 +41,22 @@ let onSessionExpired: (() => void) | null = null;
 
 export function setOnSessionExpired(handler: (() => void) | null): void {
   onSessionExpired = handler;
+}
+
+// Registered by AuthProvider — called on a 403 PHONE_NOT_VERIFIED from any
+// endpoint (the backend's WhatsApp phone-verification gate), so the app can
+// re-read GET /users/me and show the blocking "Verify your mobile number"
+// screen. The request itself still fails with that 403 for its caller.
+let onPhoneNotVerified: (() => void) | null = null;
+
+export function setOnPhoneNotVerified(handler: (() => void) | null): void {
+  onPhoneNotVerified = handler;
+}
+
+function isPhoneNotVerified(error: AxiosError): boolean {
+  if (error.response?.status !== 403) return false;
+  const body = error.response.data as Partial<ApiErrorBody> | undefined;
+  return body?.error?.code === PhoneErrorCode.PHONE_NOT_VERIFIED;
 }
 
 const apiClient: AxiosInstance = axios.create({
@@ -162,9 +178,15 @@ apiClient.interceptors.response.use(
       | (InternalAxiosRequestConfig & { _retry?: boolean })
       | undefined;
 
+    if (isPhoneNotVerified(error)) onPhoneNotVerified?.();
+
+    // Only a 401 ever refreshes — never a 400/403 (e.g. POST
+    // /users/me/phone/verify's 400 CODE_INVALID or the gate's 403
+    // PHONE_NOT_VERIFIED). A 401 from signing in (a wrong code —
+    // CODE_INVALID) says nothing about a session to refresh either.
     const isAuthRoute =
       originalRequest?.url?.includes('/auth/refresh') ||
-      originalRequest?.url?.includes('/auth/login');
+      originalRequest?.url?.includes('/auth/code/');
 
     if (
       error.response?.status !== 401 ||

@@ -2,28 +2,46 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, router, useLocalSearchParams } from 'expo-router';
+import { Link, router, useLocalSearchParams, type Href } from 'expo-router';
 
 import { useAuth } from '../../auth/auth-context';
+import { roleHomePath } from '../../auth/auth-guards';
 import { registerSchema, type RegisterFormValues } from '../../schemas/auth.schema';
 import { normalizeApiError } from '../../api/errors';
+import { CodeEntryStep } from '../../features/auth/components/CodeEntryStep';
+import {
+  DEFAULT_RESEND_AFTER_SECONDS,
+  PHONE_HINT,
+  resendAvailableFromNow,
+  signUpErrorField,
+} from '../../features/auth/signInCode';
 import { AppButton, AppInput, AppScreen, AppText } from '../../components/ui';
 import { useTheme } from '../../theme';
+import type { AuthUser, User } from '../../types/api.types';
 
+interface SentCode {
+  email: string;
+  message: string;
+  resendAt: number;
+}
+
+// Sign-up by emailed code (plan A11, A21, A23): name, email and mobile number
+// → POST /auth/register (no password; the backend emails a code) → the same
+// 6-digit code step as login, which signs the new account in.
 export default function RegisterScreen() {
   const { register } = useAuth();
   const { spacing, colors } = useTheme();
-  // Not used here directly — registering doesn't log anyone in — just passed
-  // on to login, so a guest who signed up mid-action ends up back where they
-  // started once they do log in.
+  // Where the guest was heading when asked to sign up — they land there once
+  // the code signs them in.
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const loginHref = returnTo ? { pathname: '/login' as const, params: { returnTo } } : '/login';
   const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [sent, setSent] = useState<SentCode | null>(null);
 
   const {
     control,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -32,29 +50,37 @@ export default function RegisterScreen() {
   const onSubmit = async (values: RegisterFormValues) => {
     setFormError(null);
     try {
-      const { confirmPassword: _confirmPassword, ...payload } = values;
-      const result = await register({
-        ...payload,
-        name: payload.name.trim(),
-        email: payload.email.trim(),
-        phone: payload.phone.trim(),
+      const result = await register(values);
+      setSent({
+        email: values.email,
+        message: result.message,
+        // Register has no resendAfterSeconds — the code request's 60 s.
+        resendAt: resendAvailableFromNow(DEFAULT_RESEND_AFTER_SECONDS),
       });
-      setSuccessMessage(result.message);
     } catch (error) {
-      setFormError(normalizeApiError(error).message);
+      // The server's own message (PHONE_TAKEN, invalid number, email already
+      // used), under the field it's about.
+      const normalized = normalizeApiError(error);
+      const field = signUpErrorField(normalized);
+      if (field === 'form') setFormError(normalized.message);
+      else setError(field, { type: 'server', message: normalized.message });
     }
   };
 
-  if (successMessage) {
+  const onSignedIn = (user: AuthUser | User) => {
+    router.replace(((returnTo as string) || roleHomePath(user.role)) as Href);
+  };
+
+  if (sent) {
     return (
-      <AppScreen contentContainerStyle={{ padding: spacing.lg, justifyContent: 'center', flexGrow: 1 }}>
-        <AppText variant="title" style={{ marginBottom: spacing.sm }}>
-          Check your email
-        </AppText>
-        <AppText muted style={{ marginBottom: spacing.xl }}>
-          {successMessage}
-        </AppText>
-        <AppButton title="Go to login" onPress={() => router.replace(loginHref)} />
+      <AppScreen scroll keyboardAvoiding contentContainerStyle={{ padding: spacing.lg, justifyContent: 'center', flexGrow: 1 }}>
+        <CodeEntryStep
+          email={sent.email}
+          message={sent.message}
+          initialResendAt={sent.resendAt}
+          onSignedIn={onSignedIn}
+          onUseDifferentEmail={() => router.replace(loginHref)}
+        />
       </AppScreen>
     );
   }
@@ -65,7 +91,7 @@ export default function RegisterScreen() {
         Create your account
       </AppText>
       <AppText muted style={{ marginBottom: spacing.xl }}>
-        Browse and book vehicles near you.
+        We&apos;ll email you a 6-digit code to sign in. No password needed.
       </AppText>
 
       <Controller
@@ -74,6 +100,7 @@ export default function RegisterScreen() {
         render={({ field }) => (
           <AppInput
             label="Full name"
+            autoComplete="name"
             value={field.value}
             onChangeText={field.onChange}
             onBlur={field.onBlur}
@@ -88,6 +115,7 @@ export default function RegisterScreen() {
           <AppInput
             label="Email"
             autoCapitalize="none"
+            autoComplete="email"
             keyboardType="email-address"
             value={field.value}
             onChangeText={field.onChange}
@@ -101,43 +129,15 @@ export default function RegisterScreen() {
         name="phone"
         render={({ field }) => (
           <AppInput
-            label="Phone"
+            label="Mobile number"
+            placeholder="03001234567"
             keyboardType="phone-pad"
+            autoComplete="tel"
+            helperText={PHONE_HINT}
             value={field.value}
             onChangeText={field.onChange}
             onBlur={field.onBlur}
             error={errors.phone?.message}
-          />
-        )}
-      />
-      <Controller
-        control={control}
-        name="password"
-        render={({ field }) => (
-          <AppInput
-            label="Password"
-            isPassword
-            autoCapitalize="none"
-            helperText="At least 8 characters, with an uppercase letter, lowercase letter, and number."
-            value={field.value}
-            onChangeText={field.onChange}
-            onBlur={field.onBlur}
-            error={errors.password?.message}
-          />
-        )}
-      />
-      <Controller
-        control={control}
-        name="confirmPassword"
-        render={({ field }) => (
-          <AppInput
-            label="Confirm password"
-            isPassword
-            autoCapitalize="none"
-            value={field.value}
-            onChangeText={field.onChange}
-            onBlur={field.onBlur}
-            error={errors.confirmPassword?.message}
           />
         )}
       />

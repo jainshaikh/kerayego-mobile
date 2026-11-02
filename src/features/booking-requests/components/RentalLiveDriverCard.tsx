@@ -1,11 +1,12 @@
-import { Linking, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { AppButton, AppCard, AppText } from '../../../components/ui';
+import { AppCard, AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { useAppInForeground } from '../../../hooks/useAppInForeground';
 import { useNow } from '../../../hooks/useNow';
 import { LiveTripMap } from '../../liveRide/components/LiveTripMap';
 import { formatAgo } from '../../trip-inquiries/riderLiveTrip/riderTripState';
+import { DriverContactActions } from '../../trip-inquiries/riderLiveTrip/DriverContactActions';
 import { useBookingLiveDriver, useBookingLiveRoute } from '../queries';
 
 interface RentalLiveDriverCardProps {
@@ -17,8 +18,9 @@ const MAP_HEIGHT = 260;
 // The rental customer's view of their assigned driver while the booking is
 // IN_PROGRESS: a live map of the driver's last position with their recent
 // path (GET /booking-requests/:id/live-driver and /live-route, polled every
-// 10 s while this screen is open in the foreground), the driver's name, a
-// Call button and when the position was last updated.
+// 10 s while this screen is open in the foreground), the driver's name, Call
+// and WhatsApp buttons (only when the backend sends the driver's phone — it's
+// null outside D14's window) and when the position was last updated.
 export function RentalLiveDriverCard({ bookingId }: RentalLiveDriverCardProps) {
   const { colors, spacing, radii } = useTheme();
   const inForeground = useAppInForeground();
@@ -84,13 +86,11 @@ export function RentalLiveDriverCard({ bookingId }: RentalLiveDriverCardProps) {
         <AppText muted variant="caption" style={{ marginTop: 2 }}>
           {updatedLabel}
         </AppText>
+        {/* Call/WhatsApp only when the backend sends the phone (D14); none renders nothing. */}
         {phone ? (
-          <AppButton
-            title="Call driver"
-            variant="outline"
-            onPress={() => Linking.openURL(`tel:${phone.replace(/[^\d+]/g, '')}`).catch(() => {})}
-            style={{ marginTop: spacing.md }}
-          />
+          <View style={{ marginTop: spacing.md }}>
+            <DriverContactActions callNumber={phone} whatsappNumber={phone} />
+          </View>
         ) : null}
       </View>
     </AppCard>

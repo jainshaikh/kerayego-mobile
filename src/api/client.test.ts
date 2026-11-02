@@ -2,7 +2,13 @@ import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 import { clearAllAuthStorage, getRefreshToken, setRefreshToken } from '../storage/secure-storage';
-import apiClient, { getAccessToken, refreshAccessToken, setAccessToken, setOnSessionExpired } from './client';
+import apiClient, {
+  getAccessToken,
+  refreshAccessToken,
+  setAccessToken,
+  setOnPhoneNotVerified,
+  setOnSessionExpired,
+} from './client';
 import { normalizeApiError } from './errors';
 
 // SecureStore stand-in — keeps expo-secure-store out of the test.
@@ -289,11 +295,62 @@ describe('401 response interceptor', () => {
     expect(storedRefreshToken).toBe('rt-1');
   });
 
-  it('never refreshes for a 401 from /auth/login', async () => {
+  it('never refreshes for a 401 from /auth/code/verify (a wrong code)', async () => {
     route = (config) => reply(config, 401);
-    const error = await apiClient.post('/auth/login', {}).catch((e: unknown) => e);
+    const error = await apiClient.post('/auth/code/verify', {}).catch((e: unknown) => e);
     expect(normalizeApiError(error).statusCode).toBe(401);
     expect(refreshCalls()).toHaveLength(0);
     expect(sessionExpired).not.toHaveBeenCalled();
+  });
+});
+
+// ─── WhatsApp phone verification ─────────────────────────────────────────────
+
+function apiErrorBody(status: number, code: string, message = 'x') {
+  return { success: false, statusCode: status, error: { code, message } };
+}
+
+describe('phone verification errors', () => {
+  const phoneNotVerified = jest.fn();
+
+  beforeEach(() => {
+    phoneNotVerified.mockReset();
+    setOnPhoneNotVerified(phoneNotVerified);
+  });
+
+  it.each([
+    ['/users/me/phone/verify', 400, 'CODE_INVALID'],
+    ['/users/me/phone/send-code', 400, 'BAD_REQUEST'],
+    ['/users/me/phone/send-code', 429, 'CODE_RESEND_TOO_SOON'],
+    ['/users/me/phone/send-code', 409, 'PHONE_TAKEN'],
+    ['/booking-requests', 403, 'PHONE_NOT_VERIFIED'],
+  ])('never refreshes the token for %s → %i %s', async (url, status, code) => {
+    route = (config) => reply(config, status, apiErrorBody(status, code));
+    const error = await apiClient.post(url, {}).catch((e: unknown) => e);
+    expect(normalizeApiError(error)).toMatchObject({ statusCode: status, code });
+    expect(refreshCalls()).toHaveLength(0);
+    expect(sessionExpired).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe('at-1');
+  });
+
+  it('reports a 403 PHONE_NOT_VERIFIED to the app, and still fails the request', async () => {
+    route = (config) => reply(config, 403, apiErrorBody(403, 'PHONE_NOT_VERIFIED', 'Verify your mobile number on WhatsApp to continue.'));
+    const error = await apiClient.get('/my/trips').catch((e: unknown) => e);
+    expect(normalizeApiError(error)).toMatchObject({ kind: 'forbidden', code: 'PHONE_NOT_VERIFIED' });
+    expect(phoneNotVerified).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not report any other 403', async () => {
+    route = (config) => reply(config, 403, apiErrorBody(403, 'IDENTITY_ON_HOLD'));
+    await apiClient.get('/my/trips').catch(() => undefined);
+    route = (config) => reply(config, 400, apiErrorBody(400, 'PHONE_NOT_VERIFIED'));
+    await apiClient.get('/my/trips').catch(() => undefined);
+    expect(phoneNotVerified).not.toHaveBeenCalled();
+  });
+
+  it('still refreshes on a 401 from the phone endpoints (an expired access token)', async () => {
+    route = api(async (config) => reply(config, 200, tokens('at-2', 'rt-2')), 'at-2');
+    await expect(apiClient.post('/users/me/phone/send-code', { phone: '03001234567' })).resolves.toMatchObject({ status: 200 });
+    expect(refreshCalls()).toHaveLength(1);
   });
 });

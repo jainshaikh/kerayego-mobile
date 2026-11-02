@@ -1,26 +1,43 @@
 import apiClient from './client';
-import type { ApiResponse, AuthUser, LoginResult, User } from '../types/api.types';
+import type {
+  ApiResponse,
+  AuthUser,
+  LoginCodeRequestResult,
+  LoginResult,
+  RegisterResult,
+} from '../types/api.types';
+
+// Sign-in is by emailed 6-digit code only (plan A11, A21). The backend's
+// password endpoints (/auth/login, forgot/reset/change-password) are kept for
+// old app versions only — this app never calls them.
 
 export interface RegisterPayload {
   name: string;
   email: string;
-  phone?: string;
-  password: string;
+  phone: string;
 }
 
-export interface LoginPayload {
+export interface VerifyCodePayload {
   email: string;
-  password: string;
+  code: string;
 }
 
 export const authApi = {
+  /** No password: the backend emails a sign-in code and answers codeSent: true. */
   register: async (data: RegisterPayload) => {
-    const res = await apiClient.post<ApiResponse<{ user: User; message: string }>>('/auth/register', data);
+    const res = await apiClient.post<ApiResponse<RegisterResult>>('/auth/register', data);
     return res.data.data;
   },
 
-  login: async (data: LoginPayload) => {
-    const res = await apiClient.post<ApiResponse<LoginResult>>('/auth/login', data);
+  /** Always the same 200 answer, whether or not the email has an account. */
+  requestCode: async (email: string) => {
+    const res = await apiClient.post<ApiResponse<LoginCodeRequestResult>>('/auth/code/request', { email });
+    return res.data.data;
+  },
+
+  /** The /auth/login session (refresh token in the body for X-Client-Type: mobile); 401 CODE_INVALID. */
+  verifyCode: async (data: VerifyCodePayload) => {
+    const res = await apiClient.post<ApiResponse<LoginResult>>('/auth/code/verify', data);
     return res.data.data;
   },
 
@@ -36,16 +53,6 @@ export const authApi = {
 
   resendVerification: async () => {
     const res = await apiClient.post<ApiResponse<{ message: string }>>('/auth/resend-verification');
-    return res.data.data;
-  },
-
-  forgotPassword: async (email: string) => {
-    const res = await apiClient.post<ApiResponse<{ message: string }>>('/auth/forgot-password', { email });
-    return res.data.data;
-  },
-
-  resetPassword: async (data: { token: string; newPassword: string }) => {
-    const res = await apiClient.post<ApiResponse<{ message: string }>>('/auth/reset-password', data);
     return res.data.data;
   },
 };
