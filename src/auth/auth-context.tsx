@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { authApi, type RegisterPayload, type VerifyCodePayload } from '../api/auth.api';
+import { authApi, type PhoneRegisterPayload, type PhoneVerifyPayload, type VerifyCodePayload } from '../api/auth.api';
 import { usersApi } from '../api/users.api';
 import { refreshAccessToken, setAccessToken, setOnPhoneNotVerified, setOnSessionExpired } from '../api/client';
 import { clearAllAuthStorage, getRefreshToken, setRefreshToken } from '../storage/secure-storage';
@@ -21,7 +21,7 @@ import {
   unregisterPushToken,
 } from '../features/notifications/pushToken';
 import { needsPhoneVerification, userAfterPhoneNotVerified } from '../features/phone-verification/phoneVerification';
-import type { AuthUser, User } from '../types/api.types';
+import type { AuthUser, LoginResult, PhoneSignupRequired, User } from '../types/api.types';
 
 interface AuthContextValue {
   user: AuthUser | User | null;
@@ -32,8 +32,14 @@ interface AuthContextValue {
    * login did) and re-reads the user — a code sign-in verifies the email.
    */
   signInWithCode: (data: VerifyCodePayload) => Promise<AuthUser | User>;
-  /** POST /auth/register without a password — the code screen follows. */
-  register: (data: RegisterPayload) => Promise<{ message: string; codeSent: boolean }>;
+  /**
+   * POST /auth/phone/verify. A number with an account: stores the session
+   * exactly as signInWithCode does and resolves { needsSignup: false, user }.
+   * No account yet: no session — resolves the signupToken for the profile step.
+   */
+  signInWithPhone: (data: PhoneVerifyPayload) => Promise<PhoneSignInOutcome>;
+  /** POST /auth/phone/register (role USER), then the same session storing. */
+  registerWithPhone: (data: PhoneRegisterPayload) => Promise<AuthUser | User>;
   /** Re-reads GET /users/me into `user` (e.g. after the email is verified). */
   refreshUser: () => Promise<void>;
   /**
@@ -55,6 +61,8 @@ interface AuthContextValue {
    */
   endSessionAfterAccountDeletion: () => Promise<void>;
 }
+
+export type PhoneSignInOutcome = { needsSignup: false; user: AuthUser | User } | PhoneSignupRequired;
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -173,8 +181,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [clearSession, recheckPhoneVerification]);
 
-  const signInWithCode = useCallback(async (data: VerifyCodePayload) => {
-    const result = await authApi.verifyCode(data);
+  // Every sign-in's session (email code, phone code, phone sign-up — all the
+  // /auth/login shape, refresh token in the body for X-Client-Type: mobile).
+  const startSession = useCallback(async (result: LoginResult) => {
     setAccessToken(result.accessToken);
     setOfflineQueueOwner(result.user.id);
     setDriverLocationSessionUser(result.user.id);
@@ -182,9 +191,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (result.refreshToken) {
       await setRefreshToken(result.refreshToken);
     }
-    // The code proved the email (emailVerified, PENDING_VERIFICATION →
-    // ACTIVE) — read the user back so nothing keeps showing them as
-    // unverified. The sign-in's own user is the fallback if that read fails.
+    // The code proved the email or the phone (emailVerified / phoneVerified,
+    // PENDING_VERIFICATION → ACTIVE) — read the user back so nothing keeps
+    // showing them as unverified. The sign-in's own user is the fallback if
+    // that read fails.
     let signedIn: AuthUser | User = result.user;
     try {
       signedIn = await usersApi.getMe();
@@ -198,11 +208,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return signedIn;
   }, [queryClient]);
 
-  const register = useCallback(async (data: RegisterPayload) => {
-    const { name, email, phone } = data;
-    const result = await authApi.register({ name, email, phone });
-    return { message: result.message, codeSent: result.codeSent };
-  }, []);
+  const signInWithCode = useCallback(
+    async (data: VerifyCodePayload) => startSession(await authApi.verifyCode(data)),
+    [startSession],
+  );
+
+  const signInWithPhone = useCallback(
+    async (data: PhoneVerifyPayload): Promise<PhoneSignInOutcome> => {
+      const result = await authApi.verifyPhoneCode(data);
+      if (result.needsSignup) return result;
+      return { needsSignup: false, user: await startSession(result) };
+    },
+    [startSession],
+  );
+
+  const registerWithPhone = useCallback(
+    async (data: PhoneRegisterPayload) => startSession(await authApi.registerWithPhone(data)),
+    [startSession],
+  );
 
   const refreshUser = useCallback(async () => {
     const me = await usersApi.getMe();
@@ -240,7 +263,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!user,
       isBootstrapping,
       signInWithCode,
-      register,
+      signInWithPhone,
+      registerWithPhone,
       refreshUser,
       replaceUser,
       deletionCancelledNotice,
@@ -252,7 +276,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isBootstrapping,
       signInWithCode,
-      register,
+      signInWithPhone,
+      registerWithPhone,
       refreshUser,
       replaceUser,
       deletionCancelledNotice,

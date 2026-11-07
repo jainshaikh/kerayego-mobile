@@ -1,14 +1,15 @@
 import * as ImagePicker from 'expo-image-picker';
 import { mediaApi, type UploadContext } from '../../api/media.api';
+import type { UploadResult } from '../../types/api.types';
 
 /** Requests photo-library permission only when the user actually initiates a pick — never earlier. */
 export async function pickAndUploadImage(
   context: UploadContext,
   documentType?: string,
   // Client-generated id of the entity these files belong to (e.g. a vehicle being
-  // drafted before it's created) — groups uploads into a per-entity S3 folder.
+  // drafted before it's created) — groups uploads into a per-entity storage folder.
   entityId?: string,
-): Promise<{ url: string; publicId: string; width?: number; height?: number } | null> {
+): Promise<UploadResult | null> {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) return null;
 

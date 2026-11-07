@@ -116,13 +116,48 @@ export interface LoginCodeRequestResult {
   resendAfterSeconds: number;
 }
 
-// POST /auth/register without a password: codeSent is true and the code
-// screen follows (POST /auth/code/verify).
-export interface RegisterResult {
-  user: User;
-  message: string;
-  codeSent: boolean;
+// ─── Phone-first sign-in / sign-up (2026-11-06) ─────────────────────────────
+// POST /auth/phone/request → /auth/phone/verify → (no account yet)
+// /auth/phone/register. Mirrors kerayego-backend's auth phone endpoints.
+
+// POST /auth/phone/request — the same answer whether or not the number has an
+// account (no account enumeration).
+export interface PhoneSignInRequestResult {
+  phone: string; // E.164, e.g. "+923001234567"
+  expiresInMinutes: number;
+  resendInSeconds: number;
+  channel: 'whatsapp';
 }
+
+// POST /auth/phone/verify (and /auth/phone/register) when it signs in: the
+// /auth/code/verify session plus needsSignup: false.
+export interface PhoneSignInSession extends LoginResult {
+  needsSignup: false;
+}
+
+// POST /auth/phone/verify when no account has this number yet: no session —
+// the profile step sends signupToken to /auth/phone/register.
+export interface PhoneSignupRequired {
+  needsSignup: true;
+  phone: string; // E.164
+  signupToken: string;
+  expiresInMinutes: number;
+}
+
+export type PhoneVerifyResult = PhoneSignInSession | PhoneSignupRequired;
+
+// Error codes (body.error.code) of the phone sign-in endpoints, besides the
+// PhoneErrorCode ones they share (CODE_RESEND_TOO_SOON, CODE_LIMIT_REACHED,
+// WHATSAPP_SEND_FAILED, WHATSAPP_UNAVAILABLE, PHONE_TAKEN, and CODE_INVALID —
+// a 401 here, unlike /users/me/phone/verify's 400).
+export const PhoneAuthErrorCode = {
+  /** 401 /auth/phone/register — bad or expired signupToken: back to the number step. */
+  SIGNUP_TOKEN_INVALID: 'SIGNUP_TOKEN_INVALID',
+  /** 409 /auth/phone/register — the email has an account: sign in with email instead. */
+  EMAIL_TAKEN: 'EMAIL_TAKEN',
+  /** 403 /auth/phone/register — a blocked email. */
+  IDENTITY_BLOCKED: 'IDENTITY_BLOCKED',
+} as const;
 
 // POST /users/me/phone/send-code — a code is on its way on WhatsApp, or (no
 // send) the number is already this account's verified one.
@@ -149,7 +184,10 @@ export const PhoneErrorCode = {
   WHATSAPP_SEND_FAILED: 'WHATSAPP_SEND_FAILED',
   /** 503 send-code — WhatsApp isn't set up on the server. */
   WHATSAPP_UNAVAILABLE: 'WHATSAPP_UNAVAILABLE',
-  /** 400 verify — wrong or expired code (400, never 401: no token refresh). */
+  /**
+   * 400 /users/me/phone/verify — wrong or expired code (400, never 401: no
+   * token refresh). /auth/phone/verify answers 401 CODE_INVALID instead.
+   */
   CODE_INVALID: 'CODE_INVALID',
   /** 403 from any gated endpoint while user.mustVerifyPhone. */
   PHONE_NOT_VERIFIED: 'PHONE_NOT_VERIFIED',
@@ -555,6 +593,10 @@ export interface UploadResult {
   width?: number;
   height?: number;
   format: string;
+  // Documents only (any key in a documents/ folder): a 10-minute signed link to
+  // show the file just uploaded. `url` is the file's permanent address in the
+  // PRIVATE bucket — send it back with publicId, but it never opens.
+  previewUrl?: string;
 }
 
 // ─── User Vehicles (personal vehicle, used to post Trips) ───────────────────

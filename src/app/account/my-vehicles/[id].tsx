@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 
-import { useUserVehicle } from '../../../features/user-vehicles/queries';
+import { normalizeApiError } from '../../../api/errors';
+import { useDeleteUserVehicle, useUserVehicle } from '../../../features/user-vehicles/queries';
 import {
   USER_VEHICLE_DOCUMENT_LABELS,
   USER_VEHICLE_DOCUMENT_TYPES,
@@ -16,6 +18,7 @@ import {
   AppCard,
   AppRefreshControl,
   AppScreen,
+  AppSheet,
   AppText,
   ErrorState,
   LoadingState,
@@ -33,6 +36,9 @@ export default function UserVehicleDetailScreen() {
   const { colors, spacing, tones } = useTheme();
   const { data: vehicle, isError, refetch } = useUserVehicle(id);
   const refresh = usePullToRefresh(refetch);
+  const deleteVehicle = useDeleteUserVehicle(id);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // A failed background refetch (a pull-to-refresh offline, or the one that
   // follows a save) keeps showing the vehicle already loaded.
@@ -50,6 +56,24 @@ export default function UserVehicleDetailScreen() {
   const history = plateHistoryText(vehicle.plateHistory);
   // Edit/resubmit is offered exactly where PATCH /my/vehicles/:id accepts it.
   const openEdit = () => router.push({ pathname: '/account/my-vehicles/edit/[id]', params: { id: vehicle.id } });
+  // DELETE /my/vehicles/:id refuses (409) a SUSPENDED vehicle outright, so
+  // the button isn't offered then; the other refusal (an upcoming or ongoing
+  // trip) comes back as the server's message, shown in the sheet.
+  const canDelete = vehicle.status !== UserVehicleStatus.SUSPENDED;
+  const openDeleteConfirm = () => {
+    setDeleteError(null);
+    setConfirmDeleteOpen(true);
+  };
+  const confirmDelete = () => {
+    setDeleteError(null);
+    deleteVehicle.mutate(undefined, {
+      onSuccess: () => {
+        setConfirmDeleteOpen(false);
+        router.dismissTo('/account/my-vehicles');
+      },
+      onError: (error) => setDeleteError(normalizeApiError(error).message),
+    });
+  };
 
   return (
     <AppScreen
@@ -187,6 +211,40 @@ export default function UserVehicleDetailScreen() {
           </AppCard>
         );
       })}
+
+      <View style={{ marginTop: spacing.xl }}>
+        <AppButton title="Delete vehicle" variant="danger" disabled={!canDelete} onPress={openDeleteConfirm} />
+        {!canDelete ? (
+          <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
+            This vehicle was suspended by KerayeGo, so it can’t be deleted — contact support.
+          </AppText>
+        ) : null}
+      </View>
+
+      <AppSheet
+        visible={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        title="Delete this vehicle?"
+        subtitle={`${titleCase(vehicle.make)} ${titleCase(vehicle.model)} · ${vehicle.plateNumber}`}
+      >
+        <AppText muted variant="caption" style={{ marginBottom: spacing.md }}>
+          This permanently deletes the vehicle with all its photos and documents. It can’t be undone. Your past trips
+          keep their history.
+        </AppText>
+        {deleteError ? (
+          <AppText color={colors.danger} variant="caption" style={{ marginBottom: spacing.md }}>
+            {deleteError}
+          </AppText>
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <AppButton title="Keep it" variant="secondary" onPress={() => setConfirmDeleteOpen(false)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppButton title="Delete" variant="danger" loading={deleteVehicle.isPending} onPress={confirmDelete} />
+          </View>
+        </View>
+      </AppSheet>
     </AppScreen>
   );
 }

@@ -12,7 +12,11 @@ export default function AccountLayout() {
   if (user && 'role' in user && (user.role === Role.ADMIN || user.role === Role.SUPER_ADMIN)) {
     return <Redirect href="/" />;
   }
-  if (user?.emailVerified === false) return <Redirect href="/verify-email" />;
+  // An unconfirmed email sends them to confirm it — unless a WhatsApp code
+  // proved the phone (phone sign-in / sign-up, 2026-11-06), which the backend
+  // treats as the proof of identity (it activates the account and leaves
+  // emailVerified false until the emailed link is used).
+  if (user?.emailVerified === false && user.phoneVerified !== true) return <Redirect href="/verify-email" />;
 
   return (
     <Stack screenOptions={{ headerShown: true }}>

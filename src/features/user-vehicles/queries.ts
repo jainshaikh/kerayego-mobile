@@ -48,3 +48,18 @@ export function useUpdateUserVehicle(id: string) {
     },
   });
 }
+
+export function useDeleteUserVehicle(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => userVehiclesApi.remove(id),
+    onSuccess: () => {
+      // The list and the trip form's approved-vehicle picker drop it.
+      void queryClient.invalidateQueries({ queryKey: ['userVehicles', 'mine'] });
+      void queryClient.invalidateQueries({ queryKey: ['userVehicles', 'approved'] });
+      // Marked stale but not refetched: the vehicle is gone, so a refetch
+      // would only 404 under the detail screen as it closes.
+      void queryClient.invalidateQueries({ queryKey: ['userVehicles', id], exact: true, refetchType: 'none' });
+    },
+  });
+}

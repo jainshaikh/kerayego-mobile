@@ -295,13 +295,16 @@ describe('401 response interceptor', () => {
     expect(storedRefreshToken).toBe('rt-1');
   });
 
-  it('never refreshes for a 401 from /auth/code/verify (a wrong code)', async () => {
-    route = (config) => reply(config, 401);
-    const error = await apiClient.post('/auth/code/verify', {}).catch((e: unknown) => e);
-    expect(normalizeApiError(error).statusCode).toBe(401);
-    expect(refreshCalls()).toHaveLength(0);
-    expect(sessionExpired).not.toHaveBeenCalled();
-  });
+  it.each(['/auth/code/verify', '/auth/phone/verify', '/auth/phone/register'])(
+    'never refreshes for a 401 from %s (a wrong code / signup token)',
+    async (url) => {
+      route = (config) => reply(config, 401);
+      const error = await apiClient.post(url, {}).catch((e: unknown) => e);
+      expect(normalizeApiError(error).statusCode).toBe(401);
+      expect(refreshCalls()).toHaveLength(0);
+      expect(sessionExpired).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // ─── WhatsApp phone verification ─────────────────────────────────────────────

@@ -11,10 +11,20 @@ const BACKEND_MARKET_CURRENCIES: Record<Market, string> = {
   [Market.AE]: 'PKR',
 };
 
+const BACKEND_MARKET_CALLING_CODES: Record<Market, string> = {
+  [Market.PK]: '+92',
+  [Market.SA]: '+966',
+  [Market.AE]: '+971',
+};
+
 describe('markets', () => {
   it.each(Object.values(Market))('%s uses the backend currency', (market) => {
     expect(MARKETS[market].currencyCode).toBe(BACKEND_MARKET_CURRENCIES[market]);
     expect(currencyForMarket(market)).toBe(BACKEND_MARKET_CURRENCIES[market]);
+  });
+
+  it.each(Object.values(Market))('%s uses the backend phone calling code', (market) => {
+    expect(MARKETS[market].phoneCallingCode).toBe(BACKEND_MARKET_CALLING_CODES[market]);
   });
 
   it('defaults to Pakistan, the original market, like the backend and web', () => {

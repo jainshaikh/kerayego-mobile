@@ -30,7 +30,7 @@ avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help;
 §8) · `expo-location` + `expo-task-manager` (driver's and customer's background location) · `expo-notifications` ·
 `expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
 (present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 51 `*.test.ts(x)` files under `src/`, never under
+Jest** with the `jest-expo` preset (`npm test`): 53 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
 **The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; run the other files by name.
 
@@ -68,8 +68,9 @@ example/                Leftover default Expo template scaffold — NOT part of 
 
 Routes (Expo Router; parenthesized segments are route groups, stripped from the resolved URL):
 
-- `(auth)/` — login, register (both by emailed 6-digit code — the app has no passwords), verify-email.
-  No guard redirects authenticated users away from these.
+- `(auth)/` — login and register (both the same phone-first WhatsApp-code flow; `login?method=email` is
+  the emailed-code backup — the app has no passwords), verify-email. No guard redirects authenticated
+  users away from these.
 - `(public)/(tabs)/` — the real bottom tab bar (`expo-router`'s `Tabs`, 4 screens: `index` (resolves to
   `/`, "Vehicles"), `trips`, `providers`, `profile`). Everything here is public/unauthenticated-readable.
   `(public)/vehicle/[id]`, `provider/[id]`, `trip/[id]` are detail screens (looked up by **slug** despite
@@ -85,12 +86,15 @@ between sub-views. The real bottom tab navigator is `(public)/(tabs)/_layout.tsx
 
 Three cooperating pieces, mirroring the web app's model: an **in-memory-only access token**
 (`api/client.ts`, wiped on app kill), a **refresh token in `expo-secure-store`** (the only thing that
-survives restarts), and `AuthContext`'s in-memory `user` + `isBootstrapping` state. **Sign-in is by
-emailed code only** (A11, A21): `POST /auth/code/request` → `POST /auth/code/verify` (same session
-delivery as the old password login, plus `deletionCancelled`, shown once by `DeletionCancelledSheet`),
-then `GET /users/me` is re-read (a code verifies the email); sign-up is `POST /auth/register` without a
-password, then the same code step (`features/auth/`). The backend's password endpoints exist for old app
-versions only — never call them. On launch: read the
+survives restarts), and `AuthContext`'s in-memory `user` + `isBootstrapping` state. **Sign-in and
+sign-up are phone-first** (2026-11-06, `features/auth/PhoneSignInFlow` + `phoneSignIn.ts`, used by both
+login and register): number (country chips from `constants/markets.ts`, Pakistan default) →
+`POST /auth/phone/request` → WhatsApp code → `POST /auth/phone/verify` → signed in, or (`needsSignup`)
+a profile step (name, email; role `USER` only) → `POST /auth/phone/register`. "Sign in with email
+instead" opens the emailed-code backup (`POST /auth/code/request` → `/auth/code/verify`, sign-in only).
+All three store the session the same way (`AuthContext`'s `startSession`: refresh token from the body,
+`deletionCancelled` shown once by `DeletionCancelledSheet`, then `GET /users/me` re-read). The backend's
+password endpoints and `POST /auth/register` exist for old app versions only — never call them. On launch: read the
 stored refresh token → `POST /auth/refresh` → `GET /users/me` → register push token (fire-and-forget).
 The axios response interceptor does single-flight 401-refresh-and-retry with a subscriber queue for
 concurrent requests. `X-Client-Type: mobile` is sent on every request so the backend returns the refresh
@@ -100,7 +104,8 @@ token in the response body instead of a cookie.
 export, `roleHomePath(role)`, always returns `'/'` regardless of role — vestigial. Real enforcement
 lives in `src/app/account/_layout.tsx`, which redirects unauthenticated users to `/login`,
 `ADMIN`/`SUPER_ADMIN` users to `/` (this app has no admin experience at all), and unverified-email users
-to `/verify-email`. **Unresolved contradiction in the source itself**: this layout's own comment says
+to `/verify-email` unless their phone is verified (`user.phoneVerified` — a phone sign-up's email starts
+unconfirmed). **Unresolved contradiction in the source itself**: this layout's own comment says
 `USER` and `PROVIDER` both use the account stack, while `features/reviews/components/EligibleReviewsList.tsx`
 comments "mobile has no provider role" — the two claims conflict and neither could be confirmed as
 authoritative from source alone.

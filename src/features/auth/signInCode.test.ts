@@ -9,7 +9,6 @@ import {
   resendDelaySeconds,
   resendLabel,
   resendSecondsLeft,
-  signUpErrorField,
 } from './signInCode';
 
 describe('normalizeCodeInput', () => {
@@ -72,46 +71,5 @@ describe('resend countdown', () => {
   it('labels the button with the seconds left', () => {
     expect(resendLabel(42)).toBe('Send again in 42s');
     expect(resendLabel(0)).toBe('Send again');
-  });
-});
-
-describe('signUpErrorField', () => {
-  it('puts PHONE_TAKEN under the phone field', () => {
-    expect(
-      signUpErrorField({
-        kind: 'conflict',
-        code: 'PHONE_TAKEN',
-        message: "This mobile number is already used by another KerayeGo account. If it's yours, contact KerayeGo support.",
-      }),
-    ).toBe('phone');
-  });
-
-  it('puts an invalid mobile number under the phone field', () => {
-    expect(
-      signUpErrorField({
-        kind: 'validation',
-        code: 'BAD_REQUEST',
-        message: 'Enter a valid mobile number, e.g. 03001234567 or +923001234567',
-      }),
-    ).toBe('phone');
-  });
-
-  it('puts an existing email under the email field', () => {
-    expect(
-      signUpErrorField({ kind: 'conflict', code: 'CONFLICT', message: 'An account with this email already exists' }),
-    ).toBe('email');
-  });
-
-  it('shows everything else on the form', () => {
-    expect(
-      signUpErrorField({
-        kind: 'unauthorized',
-        code: 'CODE_INVALID',
-        message: 'That code is wrong or has expired. Ask for a new one.',
-      }),
-    ).toBe('form');
-    expect(signUpErrorField({ kind: 'network', message: 'No connection.' })).toBe('form');
-    expect(signUpErrorField({ kind: 'validation', code: 'BAD_REQUEST', message: 'Validation failed' })).toBe('form');
-    expect(signUpErrorField({ kind: 'forbidden', code: 'IDENTITY_BLOCKED', message: 'Blocked' })).toBe('form');
   });
 });

@@ -2,18 +2,21 @@ import { Market } from '../types/enums';
 
 // Mirrors kerayego-backend/src/config/markets.config.ts (and web's
 // lib/config/markets.ts) — only the fields this app reads. Keep in sync if a
-// market is added or its currency changes.
+// market is added or its currency or calling code changes.
 export interface MarketMeta {
   code: Market;
   label: string;
   currencyCode: string;
+  // The country calling code, e.g. '+92' — the phone sign-in's country choice
+  // (features/auth/phoneSignIn.ts) puts it in front of a number typed without one.
+  phoneCallingCode: string;
 }
 
 // Every price on KerayeGo is in PKR, whatever the market (owner decision 2026-10-31).
 export const MARKETS: Record<Market, MarketMeta> = {
-  [Market.PK]: { code: Market.PK, label: 'Pakistan', currencyCode: 'PKR' },
-  [Market.SA]: { code: Market.SA, label: 'Saudi Arabia', currencyCode: 'PKR' },
-  [Market.AE]: { code: Market.AE, label: 'United Arab Emirates', currencyCode: 'PKR' },
+  [Market.PK]: { code: Market.PK, label: 'Pakistan', currencyCode: 'PKR', phoneCallingCode: '+92' },
+  [Market.SA]: { code: Market.SA, label: 'Saudi Arabia', currencyCode: 'PKR', phoneCallingCode: '+966' },
+  [Market.AE]: { code: Market.AE, label: 'United Arab Emirates', currencyCode: 'PKR', phoneCallingCode: '+971' },
 };
 
 // Existing data predates the Market concept entirely, so PK (the original,

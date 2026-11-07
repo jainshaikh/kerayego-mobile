@@ -13,7 +13,7 @@ interface DocumentUploadFieldProps {
   label: string;
   value: UploadedDoc | null;
   onChange: (doc: UploadedDoc) => void;
-  entityId?: string; // groups this upload into the owning vehicle's S3 folder
+  entityId?: string; // groups this upload into the owning vehicle's storage folder
   // True from the tap until the upload settles (picker included), so the form
   // can hold its submit button — otherwise a file still uploading is left out.
   onUploadingChange?: (uploading: boolean) => void;
@@ -38,6 +38,11 @@ export function DocumentUploadField({
   const { colors, radii, spacing } = useTheme();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A just-uploaded document lives in the private bucket: its `url` is an
+  // identifier that never opens, so it's shown from the upload's signed
+  // previewUrl instead. A document loaded from the server already comes with
+  // a signed url.
+  const [preview, setPreview] = useState<{ publicId: string; uri: string } | null>(null);
 
   // A promise chain rather than try/finally, which the React Compiler can't compile.
   const handlePick = () => {
@@ -46,7 +51,9 @@ export function DocumentUploadField({
     onUploadingChange?.(true);
     pickAndUploadImage('trip_document', undefined, entityId)
       .then((uploaded) => {
-        if (uploaded) onChange({ url: uploaded.url, publicId: uploaded.publicId });
+        if (!uploaded) return;
+        if (uploaded.previewUrl) setPreview({ publicId: uploaded.publicId, uri: uploaded.previewUrl });
+        onChange({ url: uploaded.url, publicId: uploaded.publicId });
       })
       .catch((e: unknown) => setError(normalizeApiError(e).message))
       .finally(() => {
@@ -55,6 +62,7 @@ export function DocumentUploadField({
       });
   };
 
+  const previewUri = value && preview?.publicId === value.publicId ? preview.uri : value?.url;
   const tint = rejected ? colors.danger : value ? colors.success : colors.primary;
 
   return (
@@ -77,7 +85,7 @@ export function DocumentUploadField({
         }}
       >
         {value ? (
-          <Image source={{ uri: value.url }} style={{ width: 56, height: 42, borderRadius: radii.sm, marginRight: spacing.md }} contentFit="cover" />
+          <Image source={{ uri: previewUri }} style={{ width: 56, height: 42, borderRadius: radii.sm, marginRight: spacing.md }} contentFit="cover" />
         ) : null}
         <AppText color={tint} variant="label">
           {uploading

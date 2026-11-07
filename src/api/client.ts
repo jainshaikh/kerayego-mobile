@@ -183,10 +183,12 @@ apiClient.interceptors.response.use(
     // Only a 401 ever refreshes — never a 400/403 (e.g. POST
     // /users/me/phone/verify's 400 CODE_INVALID or the gate's 403
     // PHONE_NOT_VERIFIED). A 401 from signing in (a wrong code —
-    // CODE_INVALID) says nothing about a session to refresh either.
+    // CODE_INVALID — or phone sign-up's SIGNUP_TOKEN_INVALID) says nothing
+    // about a session to refresh either.
     const isAuthRoute =
       originalRequest?.url?.includes('/auth/refresh') ||
-      originalRequest?.url?.includes('/auth/code/');
+      originalRequest?.url?.includes('/auth/code/') ||
+      originalRequest?.url?.includes('/auth/phone/');
 
     if (
       error.response?.status !== 401 ||
