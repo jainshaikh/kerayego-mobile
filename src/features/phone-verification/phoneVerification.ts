@@ -1,6 +1,12 @@
 import type { NormalizedApiError } from '../../api/errors';
-import { PhoneErrorCode, type AuthUser, type PhoneSendCodeResult, type User } from '../../types/api.types';
-import { DEFAULT_RESEND_AFTER_SECONDS, resendDelaySeconds } from '../auth/signInCode';
+import {
+  PhoneErrorCode,
+  type AuthUser,
+  type PhoneCodeByMessage,
+  type PhoneSendCodeResult,
+  type User,
+} from '../../types/api.types';
+import { DEFAULT_RESEND_AFTER_SECONDS, resendAvailableAt, resendDelaySeconds } from '../auth/signInCode';
 
 // Pure helpers for WhatsApp phone verification (2026-11): the blocking
 // "Verify your mobile number" screen (POST /users/me/phone/send-code →
@@ -70,6 +76,84 @@ export function formatPhoneForDisplay(phone: string | null | undefined): string 
 /** The account's mobile number (AuthUser from a sign-in has none). */
 export function phoneOf(user: AnyUser | null | undefined): string | null {
   return user && 'phone' in user ? (user.phone ?? null) : null;
+}
+
+// ─── "Get the code on WhatsApp" (message us for your code) ───────────────────
+// Until Meta allows the code template, a send may come back codeSent: false
+// with a wa.me link: the person sends "Send my KerayeGo code" from the
+// number's WhatsApp, the backend replies with the 6-digit code, and they type
+// it into the same code field. Shared by sign-in and in-app verification.
+
+export const CODE_BY_MESSAGE = {
+  BUTTON: 'Get the code on WhatsApp',
+  HELP: "Send the message from this number's WhatsApp — we'll reply with your code.",
+  TAP_BELOW: 'Tap below to get your code on WhatsApp.',
+  OPEN_FAILED: "Couldn't open WhatsApp. Check that it's installed and try again.",
+} as const;
+
+/** How the latest code reaches the person — from the latest send / "Send again". */
+export interface CodeDelivery {
+  /** False: nothing was sent — the code comes by messaging KerayeGo. */
+  codeSent: boolean;
+  /** The wa.me link that gets the code by message; null when the path is off. */
+  messageUsUrl: string | null;
+}
+
+/**
+ * A send result's CodeDelivery. An older backend sends neither field: the
+ * code was sent, no link. Only an https link is ever opened.
+ */
+export function codeDeliveryOf(result: PhoneCodeByMessage): CodeDelivery {
+  const url = typeof result.messageUsUrl === 'string' ? result.messageUsUrl.trim() : '';
+  return {
+    codeSent: result.codeSent !== false,
+    messageUsUrl: /^https:\/\//i.test(url) ? url : null,
+  };
+}
+
+/**
+ * True when the code step should lead with "Get the code on WhatsApp": the
+ * code wasn't sent and the link is there. (codeSent: false without a link is
+ * the backend's testing code — today's wording stays.)
+ */
+export function mustMessageForCode(delivery: CodeDelivery): boolean {
+  return !delivery.codeSent && delivery.messageUsUrl !== null;
+}
+
+/** The in-app verification code step's line under "Enter the code". */
+export function verificationCodeIntro(phone: string, delivery: CodeDelivery): string {
+  return mustMessageForCode(delivery)
+    ? `Tap below to get the code for ${formatPhoneForDisplay(phone)} on WhatsApp.`
+    : `Sent to WhatsApp ${formatPhoneForDisplay(phone)}`;
+}
+
+/** A code on its way, as the verification code step keeps it. */
+export interface SentVerificationCode extends CodeDelivery {
+  // E.164, as the server normalised it.
+  phone: string;
+  expiresInMinutes: number;
+  // When "Send again" first works (ms).
+  resendAt: number;
+}
+
+/** A send-code result that sent (or kept) a code → the code step's state. `now` is ms. */
+export function sentVerificationCode(
+  result: Exclude<PhoneSendCodeResult, { alreadyVerified: true }>,
+  now: number,
+): SentVerificationCode {
+  return {
+    phone: result.phone,
+    expiresInMinutes: result.expiresInMinutes,
+    resendAt: resendAvailableAt(now, resendDelayAfterSend(result)),
+    ...codeDeliveryOf(result),
+  };
+}
+
+/** sentVerificationCode for a result that just came back. */
+export function sentVerificationCodeNow(
+  result: Exclude<PhoneSendCodeResult, { alreadyVerified: true }>,
+): SentVerificationCode {
+  return sentVerificationCode(result, Date.now());
 }
 
 // ─── Send-code / verify errors ──────────────────────────────────────────────

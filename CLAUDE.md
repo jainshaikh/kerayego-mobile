@@ -90,7 +90,9 @@ survives restarts), and `AuthContext`'s in-memory `user` + `isBootstrapping` sta
 sign-up are phone-first** (2026-11-06, `features/auth/PhoneSignInFlow` + `phoneSignIn.ts`, used by both
 login and register): number (country chips from `constants/markets.ts`, Pakistan default) →
 `POST /auth/phone/request` → WhatsApp code → `POST /auth/phone/verify` → signed in, or (`needsSignup`)
-a profile step (name, email; role `USER` only) → `POST /auth/phone/register`. "Sign in with email
+a profile step (name, email; role `USER` only) → `POST /auth/phone/register`. Both this code step and in-app
+verification's show "Get the code on WhatsApp" (opens the send result's `messageUsUrl`; KerayeGo replies
+with the code) — leading the step when the result says `codeSent: false`. "Sign in with email
 instead" opens the emailed-code backup (`POST /auth/code/request` → `/auth/code/verify`, sign-in only).
 All three store the session the same way (`AuthContext`'s `startSession`: refresh token from the body,
 `deletionCancelled` shown once by `DeletionCancelledSheet`, then `GET /users/me` re-read). The backend's

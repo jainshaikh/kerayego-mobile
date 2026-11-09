@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 
-import { PHONE_ERROR_MESSAGES } from '../phone-verification/phoneVerification';
+import { CODE_BY_MESSAGE, PHONE_ERROR_MESSAGES } from '../phone-verification/phoneVerification';
 import { Market } from '../../types/enums';
 import type { PhoneSignInRequestResult, PhoneSignupRequired } from '../../types/api.types';
 import {
@@ -8,6 +8,7 @@ import {
   INITIAL_PHONE_AUTH_STATE,
   PHONE_SIGN_IN_MESSAGES,
   codeSentNow,
+  codeStepMessage,
   composePhoneNumber,
   isSignupExpired,
   isSignupExpiredNow,
@@ -74,10 +75,54 @@ describe('phoneAuthReducer', () => {
   it('goes to the code step with the server’s number and countdown', () => {
     expect(onCode).toEqual({
       step: 'code',
-      sent: { phone: '+923001234567', expiresInMinutes: 10, resendAt: NOW + 60_000 },
+      sent: {
+        phone: '+923001234567',
+        expiresInMinutes: 10,
+        resendAt: NOW + 60_000,
+        // An older backend: sent, no "Get the code on WhatsApp" link.
+        codeSent: true,
+        messageUsUrl: null,
+      },
       signup: null,
       notice: null,
     });
+  });
+
+  it('keeps codeSent and messageUsUrl from the send, and "Send again" replaces them', () => {
+    const url = 'https://wa.me/923103810011?text=Send%20my%20KerayeGo%20code';
+    const notSent = phoneAuthReducer(INITIAL_PHONE_AUTH_STATE, {
+      type: 'codeSent',
+      result: { ...requestResult, codeSent: false, messageUsUrl: url, message: 'Send us a message…' },
+      now: NOW,
+    });
+    expect(notSent.step).toBe('code');
+    expect(notSent.sent).toMatchObject({ codeSent: false, messageUsUrl: url });
+    expect(codeStepMessage(notSent.sent!)).toBe(CODE_BY_MESSAGE.TAP_BELOW);
+
+    const resent = phoneAuthReducer(notSent, {
+      type: 'codeSent',
+      result: { ...requestResult, codeSent: true, messageUsUrl: url },
+      now: NOW + 61_000,
+    });
+    expect(resent.sent).toMatchObject({ codeSent: true, messageUsUrl: url, resendAt: NOW + 121_000 });
+    expect(codeStepMessage(resent.sent!)).toBe(PHONE_SIGN_IN_MESSAGES.CODE_SENT);
+
+    // A later send without the link (path turned off) drops it.
+    const plain = phoneAuthReducer(resent, { type: 'codeSent', result: requestResult, now: NOW });
+    expect(plain.sent).toMatchObject({ codeSent: true, messageUsUrl: null });
+  });
+
+  it('keeps the link through "Change" and a moved countdown', () => {
+    const url = 'https://wa.me/923103810011?text=Send%20my%20KerayeGo%20code';
+    const notSent = phoneAuthReducer(INITIAL_PHONE_AUTH_STATE, {
+      type: 'codeSent',
+      result: { ...requestResult, codeSent: false, messageUsUrl: url },
+      now: NOW,
+    });
+    const delayed = phoneAuthReducer(notSent, { type: 'resendDelayed', retryAt: NOW + 5_000 });
+    expect(delayed.sent).toMatchObject({ codeSent: false, messageUsUrl: url });
+    const back = phoneAuthReducer(phoneAuthReducer(delayed, { type: 'changeNumber' }), { type: 'backToCode' });
+    expect(back.sent).toMatchObject({ codeSent: false, messageUsUrl: url });
   });
 
   it('falls back to a 60 s countdown when resendInSeconds is missing or odd', () => {

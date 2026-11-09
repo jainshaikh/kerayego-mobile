@@ -18,8 +18,10 @@ import { useTheme } from '../../../theme';
 import type { AuthUser, User } from '../../../types/api.types';
 import type { Market } from '../../../types/enums';
 import { FilterChipRow } from '../../listings/components/FilterChipRow';
+import { GetCodeOnWhatsApp } from '../../phone-verification/components/GetCodeOnWhatsApp';
 import {
   formatPhoneForDisplay,
+  mustMessageForCode,
   sendCodeErrorNow,
   sendCodeErrorText,
   type SendCodeError,
@@ -30,6 +32,7 @@ import {
   PHONE_COUNTRIES,
   PHONE_SIGN_IN_MESSAGES,
   codeSentNow,
+  codeStepMessage,
   composePhoneNumber,
   isSignupExpiredNow,
   phoneAuthReducer,
@@ -224,6 +227,8 @@ function CodeStep({
 
   const now = useNow(true);
   const secondsLeft = resendSecondsLeft(sent.resendAt, now);
+  // The code wasn't sent: "Get the code on WhatsApp" leads, above the field.
+  const messageFirst = mustMessageForCode(sent);
 
   const submit = async (value: string) => {
     if (inFlight.current) return;
@@ -279,7 +284,7 @@ function CodeStep({
         Enter your code
       </AppText>
       <AppText muted style={{ marginBottom: spacing.xs }}>
-        {PHONE_SIGN_IN_MESSAGES.CODE_SENT}
+        {codeStepMessage(sent)}
       </AppText>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.xl }}>
         <AppText>{formatPhoneForDisplay(sent.phone)}</AppText>
@@ -292,6 +297,10 @@ function CodeStep({
           <AppText color={colors.primary}>Change</AppText>
         </Pressable>
       </View>
+
+      {messageFirst && sent.messageUsUrl ? (
+        <GetCodeOnWhatsApp url={sent.messageUsUrl} primary style={{ marginBottom: spacing.xl }} />
+      ) : null}
 
       <AppInput
         label="6-digit code"
@@ -306,7 +315,12 @@ function CodeStep({
         helperText={`The code works for ${sent.expiresInMinutes} minutes.`}
       />
 
-      <AppButton title="Continue" loading={submitting} onPress={() => void submit(code)} />
+      <AppButton
+        title="Continue"
+        variant={messageFirst ? 'outline' : 'primary'}
+        loading={submitting}
+        onPress={() => void submit(code)}
+      />
 
       <AppButton
         title={resendLabel(secondsLeft)}
@@ -316,6 +330,11 @@ function CodeStep({
         onPress={() => void resend()}
         style={{ marginTop: spacing.md }}
       />
+
+      {/* The code is on its way: the link stays as a fallback if it doesn't arrive. */}
+      {!messageFirst && sent.messageUsUrl ? (
+        <GetCodeOnWhatsApp url={sent.messageUsUrl} primary={false} style={{ marginTop: spacing.md }} />
+      ) : null}
     </View>
   );
 }

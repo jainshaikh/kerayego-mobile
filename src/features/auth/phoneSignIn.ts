@@ -7,7 +7,14 @@ import {
   type PhoneSignupRequired,
 } from '../../types/api.types';
 import { Market } from '../../types/enums';
-import { PHONE_ERROR_MESSAGES, phoneVerificationErrorMessage } from '../phone-verification/phoneVerification';
+import {
+  CODE_BY_MESSAGE,
+  PHONE_ERROR_MESSAGES,
+  codeDeliveryOf,
+  mustMessageForCode,
+  phoneVerificationErrorMessage,
+  type CodeDelivery,
+} from '../phone-verification/phoneVerification';
 import { resendAvailableAt, resendDelaySeconds } from './signInCode';
 
 // Pure helpers for phone-first sign-in / sign-up (2026-11-06):
@@ -72,12 +79,19 @@ export function composePhoneNumber(typed: string, country: Market): string {
 
 // ─── Flow state ─────────────────────────────────────────────────────────────
 
-export interface SentPhoneCode {
+// codeSent / messageUsUrl ("Get the code on WhatsApp") come from the latest
+// send — "Send again" replaces them.
+export interface SentPhoneCode extends CodeDelivery {
   // E.164, as the server normalised it — what the code step and "Send again" use.
   phone: string;
   expiresInMinutes: number;
   // When "Send again" first works (ms).
   resendAt: number;
+}
+
+/** The code step's line under "Enter your code". */
+export function codeStepMessage(delivery: CodeDelivery): string {
+  return mustMessageForCode(delivery) ? CODE_BY_MESSAGE.TAP_BELOW : PHONE_SIGN_IN_MESSAGES.CODE_SENT;
 }
 
 export interface PendingSignup {
@@ -125,6 +139,7 @@ export function phoneAuthReducer(state: PhoneAuthState, action: PhoneAuthAction)
           phone: action.result.phone,
           expiresInMinutes: action.result.expiresInMinutes,
           resendAt: resendAvailableAt(action.now, resendDelaySeconds(action.result.resendInSeconds)),
+          ...codeDeliveryOf(action.result),
         },
         signup: null,
         notice: null,

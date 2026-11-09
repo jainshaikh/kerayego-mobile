@@ -1,20 +1,26 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 
 import type { NormalizedApiError } from '../../api/errors';
 import { Role, UserStatus } from '../../types/enums';
 import type { AuthUser, User } from '../../types/api.types';
 import {
+  CODE_BY_MESSAGE,
   PHONE_ERROR_MESSAGES,
   WHATSAPP_TOGGLE_DESCRIPTION,
   WHATSAPP_TOGGLE_NEEDS_VERIFIED,
+  codeDeliveryOf,
   formatPhoneForDisplay,
+  mustMessageForCode,
   needsPhoneVerification,
   phoneOf,
   phoneVerificationErrorMessage,
   resendDelayAfterSend,
   sendCodeError,
   sendCodeErrorText,
+  sentVerificationCode,
+  sentVerificationCodeNow,
   userAfterPhoneNotVerified,
+  verificationCodeIntro,
   whatsappToggleState,
   withWhatsappUpdates,
 } from './phoneVerification';
@@ -206,5 +212,69 @@ describe('the "WhatsApp updates" switch', () => {
     const after = withWhatsappUpdates(before, false);
     expect(after.whatsappUpdates).toBe(false);
     expect(before.whatsappUpdates).toBe(true);
+  });
+});
+
+describe('"Get the code on WhatsApp" (message us for your code)', () => {
+  const url = 'https://wa.me/923103810011?text=Send%20my%20KerayeGo%20code';
+  const sendResult = { phone: '+923001234567', expiresInMinutes: 10, resendInSeconds: 60, channel: 'whatsapp' as const };
+
+  it('treats an older backend (neither field) as sent, with no link', () => {
+    expect(codeDeliveryOf({})).toEqual({ codeSent: true, messageUsUrl: null });
+    expect(mustMessageForCode(codeDeliveryOf({}))).toBe(false);
+  });
+
+  it('keeps codeSent and an https link as sent', () => {
+    expect(codeDeliveryOf({ codeSent: true, messageUsUrl: url })).toEqual({ codeSent: true, messageUsUrl: url });
+    expect(codeDeliveryOf({ codeSent: false, messageUsUrl: ` ${url} ` })).toEqual({ codeSent: false, messageUsUrl: url });
+  });
+
+  it('never keeps a link that is not https', () => {
+    expect(codeDeliveryOf({ codeSent: false, messageUsUrl: 'javascript:alert(1)' }).messageUsUrl).toBeNull();
+    expect(codeDeliveryOf({ codeSent: false, messageUsUrl: '' }).messageUsUrl).toBeNull();
+  });
+
+  it('leads with the link only when the code was not sent and the link is there', () => {
+    expect(mustMessageForCode({ codeSent: false, messageUsUrl: url })).toBe(true);
+    expect(mustMessageForCode({ codeSent: true, messageUsUrl: url })).toBe(false);
+    // codeSent: false without a link is the testing code — today's wording.
+    expect(mustMessageForCode({ codeSent: false, messageUsUrl: null })).toBe(false);
+  });
+
+  it("words the verification code step's line for each case", () => {
+    expect(verificationCodeIntro('+923001234567', { codeSent: true, messageUsUrl: url })).toBe(
+      'Sent to WhatsApp +92 300 1234567',
+    );
+    expect(verificationCodeIntro('+923001234567', { codeSent: false, messageUsUrl: url })).toBe(
+      'Tap below to get the code for +92 300 1234567 on WhatsApp.',
+    );
+    expect(verificationCodeIntro('+923001234567', { codeSent: false, messageUsUrl: null })).toBe(
+      'Sent to WhatsApp +92 300 1234567',
+    );
+    expect(CODE_BY_MESSAGE.BUTTON).toBe('Get the code on WhatsApp');
+  });
+
+  it("turns a send-code result into the code step's state", () => {
+    const now = 1_000_000;
+    expect(sentVerificationCode({ ...sendResult, codeSent: false, messageUsUrl: url }, now)).toEqual({
+      phone: '+923001234567',
+      expiresInMinutes: 10,
+      resendAt: now + 60_000,
+      codeSent: false,
+      messageUsUrl: url,
+    });
+    expect(sentVerificationCode({ ...sendResult, resendInSeconds: 30 }, now)).toEqual({
+      phone: '+923001234567',
+      expiresInMinutes: 10,
+      resendAt: now + 30_000,
+      codeSent: true,
+      messageUsUrl: null,
+    });
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      expect(sentVerificationCodeNow(sendResult)).toEqual(sentVerificationCode(sendResult, now));
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

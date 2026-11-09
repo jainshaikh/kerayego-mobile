@@ -120,13 +120,29 @@ export interface LoginCodeRequestResult {
 // POST /auth/phone/request → /auth/phone/verify → (no account yet)
 // /auth/phone/register. Mirrors kerayego-backend's auth phone endpoints.
 
+// "Message us for your code" (2026-11-09), on POST /auth/phone/request and
+// POST /users/me/phone/send-code. Both optional — an older backend sends
+// neither (treat as codeSent: true, no link).
+export interface PhoneCodeByMessage {
+  // False: the code template couldn't be sent (Meta hasn't allowed it yet) —
+  // the person gets the code by sending messageUsUrl's message; the backend
+  // replies with it. True/absent: the code is on its way, as before.
+  codeSent?: boolean;
+  // A wa.me link with "Send my KerayeGo code" prefilled to KerayeGo's number.
+  // Absent: the path is off (and a failed send is still 502 WHATSAPP_SEND_FAILED).
+  messageUsUrl?: string;
+}
+
 // POST /auth/phone/request — the same answer whether or not the number has an
 // account (no account enumeration).
-export interface PhoneSignInRequestResult {
+export interface PhoneSignInRequestResult extends PhoneCodeByMessage {
   phone: string; // E.164, e.g. "+923001234567"
   expiresInMinutes: number;
   resendInSeconds: number;
   channel: 'whatsapp';
+  // Only when codeSent is false: "Send us a message on WhatsApp and we will
+  // reply with your 6-digit code."
+  message?: string;
 }
 
 // POST /auth/phone/verify (and /auth/phone/register) when it signs in: the
@@ -168,7 +184,7 @@ export type PhoneSendCodeResult =
       resendInSeconds: number;
       channel: 'whatsapp';
       alreadyVerified?: false;
-    }
+    } & PhoneCodeByMessage
   | { phone: string; alreadyVerified: true };
 
 // Error codes (body.error.code) of the WhatsApp phone verification endpoints
@@ -180,7 +196,11 @@ export const PhoneErrorCode = {
   CODE_RESEND_TOO_SOON: 'CODE_RESEND_TOO_SOON',
   /** 429 send-code — 10 codes in 24 h for this account. */
   CODE_LIMIT_REACHED: 'CODE_LIMIT_REACHED',
-  /** 502 send-code — Meta refused the message (its message says what to do). */
+  /**
+   * 502 send-code — Meta refused the message (its message says what to do).
+   * With "message us for your code" on, the backend answers 200 codeSent:
+   * false instead.
+   */
   WHATSAPP_SEND_FAILED: 'WHATSAPP_SEND_FAILED',
   /** 503 send-code — WhatsApp isn't set up on the server. */
   WHATSAPP_UNAVAILABLE: 'WHATSAPP_UNAVAILABLE',

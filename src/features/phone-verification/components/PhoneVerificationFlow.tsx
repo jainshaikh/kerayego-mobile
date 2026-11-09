@@ -14,7 +14,6 @@ import {
   SIGN_IN_CODE_LENGTH,
   isCompleteCode,
   normalizeCodeInput,
-  resendAvailableFromNow,
   resendLabel,
   resendSecondsLeft,
 } from '../../auth/signInCode';
@@ -22,20 +21,16 @@ import {
   PHONE_VERIFY_HINT,
   WHATSAPP_UPDATES_SMALL_PRINT,
   formatPhoneForDisplay,
+  mustMessageForCode,
   phoneVerificationErrorMessage,
-  resendDelayAfterSend,
   sendCodeErrorNow,
   sendCodeErrorText,
+  sentVerificationCodeNow,
+  verificationCodeIntro,
   type SendCodeError,
+  type SentVerificationCode,
 } from '../phoneVerification';
-
-interface SentCode {
-  // E.164, as the server normalised it.
-  phone: string;
-  expiresInMinutes: number;
-  // When "Send again" first works (ms).
-  resendAt: number;
-}
+import { GetCodeOnWhatsApp } from './GetCodeOnWhatsApp';
 
 interface PhoneVerificationFlowProps {
   // Prefilled into step 1 (the account's current number, if any).
@@ -49,10 +44,12 @@ interface PhoneVerificationFlowProps {
 // 1. the number → POST /users/me/phone/send-code;
 // 2. the 6-digit code → POST /users/me/phone/verify (sends itself once 6
 //    digits are in), "Send again" after the server's countdown, "Change number".
-// The code step follows CodeEntryStep (email sign-in) and its helpers.
+// The code step follows CodeEntryStep (email sign-in) and its helpers. When
+// the send result has messageUsUrl, "Get the code on WhatsApp" shows too —
+// leading, above the field, when the code wasn't sent (codeSent: false).
 export function PhoneVerificationFlow({ initialPhone, onVerified }: PhoneVerificationFlowProps) {
   const { spacing } = useTheme();
-  const [sent, setSent] = useState<SentCode | null>(null);
+  const [sent, setSent] = useState<SentVerificationCode | null>(null);
   const [step, setStep] = useState<'phone' | 'code'>('phone');
   const [sendErrorState, setSendErrorState] = useState<SendCodeError | null>(null);
   const [code, setCode] = useState('');
@@ -87,11 +84,7 @@ export function PhoneVerificationFlow({ initialPhone, onVerified }: PhoneVerific
         onVerified(await usersApi.getMe());
         return false;
       }
-      setSent({
-        phone: result.phone,
-        expiresInMinutes: result.expiresInMinutes,
-        resendAt: resendAvailableFromNow(resendDelayAfterSend(result)),
-      });
+      setSent(sentVerificationCodeNow(result));
       setCode('');
       setCodeError(null);
       setStep('code');
@@ -141,11 +134,7 @@ export function PhoneVerificationFlow({ initialPhone, onVerified }: PhoneVerific
         onVerified(await usersApi.getMe());
         return;
       }
-      setSent({
-        phone: result.phone,
-        expiresInMinutes: result.expiresInMinutes,
-        resendAt: resendAvailableFromNow(resendDelayAfterSend(result)),
-      });
+      setSent(sentVerificationCodeNow(result));
       setCode('');
     } catch (err) {
       const state = sendCodeErrorNow(normalizeApiError(err));
@@ -158,14 +147,20 @@ export function PhoneVerificationFlow({ initialPhone, onVerified }: PhoneVerific
   };
 
   if (step === 'code' && sent) {
+    // The code wasn't sent: "Get the code on WhatsApp" leads, above the field.
+    const messageFirst = mustMessageForCode(sent);
     return (
       <View>
         <AppText variant="subtitle" style={{ marginBottom: spacing.xs }}>
           Enter the code
         </AppText>
         <AppText muted style={{ marginBottom: spacing.lg }}>
-          Sent to WhatsApp {formatPhoneForDisplay(sent.phone)}
+          {verificationCodeIntro(sent.phone, sent)}
         </AppText>
+
+        {messageFirst && sent.messageUsUrl ? (
+          <GetCodeOnWhatsApp url={sent.messageUsUrl} primary style={{ marginBottom: spacing.lg }} />
+        ) : null}
 
         <AppInput
           label="6-digit code"
@@ -180,7 +175,12 @@ export function PhoneVerificationFlow({ initialPhone, onVerified }: PhoneVerific
           helperText={`The code works for ${sent.expiresInMinutes} minutes.`}
         />
 
-        <AppButton title="Verify" loading={verifying} onPress={() => void verify(code)} />
+        <AppButton
+          title="Verify"
+          variant={messageFirst ? 'outline' : 'primary'}
+          loading={verifying}
+          onPress={() => void verify(code)}
+        />
         <AppButton
           title={resendLabel(secondsLeft)}
           variant="secondary"
@@ -189,6 +189,10 @@ export function PhoneVerificationFlow({ initialPhone, onVerified }: PhoneVerific
           onPress={() => void resend()}
           style={{ marginTop: spacing.md }}
         />
+        {/* The code is on its way: the link stays as a fallback if it doesn't arrive. */}
+        {!messageFirst && sent.messageUsUrl ? (
+          <GetCodeOnWhatsApp url={sent.messageUsUrl} primary={false} style={{ marginTop: spacing.md }} />
+        ) : null}
         <AppButton
           title="Change number"
           variant="ghost"
