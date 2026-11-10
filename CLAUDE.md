@@ -279,6 +279,10 @@ build.
   use this app at all (see Authentication above) is unresolved in the source itself.
 - Release Android signing/minification is not production-ready (debug keystore, no shrink/minify).
 - Tests are unit-only: nothing renders components or runs the app end to end.
+- **Rental copy doesn't state the no-self-drive rule yet** (root `CLAUDE.md` → Product rules). There's no
+  self-drive wording anywhere in `src/` (checked 2026-11-10), but nothing says every car comes with the
+  provider's driver or that providers check documents before confirming — web says both since
+  2026-10-14. The owner deferred mobile copy work on 2026-10-15; add it when that work starts.
 
 ## Where to go deeper
 
