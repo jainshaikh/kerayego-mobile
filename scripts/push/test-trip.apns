@@ -1,0 +1,18 @@
+{
+  "Simulator Target Bundle": "com.kerayego.app",
+  "aps": {
+    "alert": {
+      "title": "Trip started",
+      "body": "Your driver has started the trip."
+    },
+    "sound": "default"
+  },
+  "body": {
+    "v": "2",
+    "type": "trip.started",
+    "recipientRole": "RIDER",
+    "tripId": "REPLACE_WITH_TRIP_ID",
+    "tripInquiryId": "REPLACE_WITH_TRIP_INQUIRY_ID",
+    "inquiryId": "REPLACE_WITH_TRIP_INQUIRY_ID"
+  }
+}

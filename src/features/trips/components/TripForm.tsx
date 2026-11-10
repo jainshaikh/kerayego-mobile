@@ -9,6 +9,7 @@ import { useMyApprovedUserVehicles } from '../../user-vehicles/queries';
 import { tripFormSchema, type TripFormValues } from '../../../schemas/trip.schema';
 import { titleCase } from '../../../utils/format';
 import { parseWholeNumberInput, wholeNumberInputText } from '../../../utils/numberInput';
+import { tripTimeZoneSuffix } from '../../../utils/tripDateTime';
 import { TripStopsSection } from './TripStopsSection';
 
 interface TripFormProps {
@@ -128,7 +129,7 @@ export function TripForm({ defaultValues, onSubmit, submitLabel, submitting }: T
         name="departureAt"
         render={({ field }) => (
           <DateField
-            label="Departure date & time"
+            label={`Departure date & time${tripTimeZoneSuffix()}`}
             mode="datetime"
             value={field.value}
             onChange={field.onChange}

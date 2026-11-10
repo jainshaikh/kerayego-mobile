@@ -6,21 +6,29 @@ import { tripInquiriesApi } from '../../api/trip-inquiries.api';
 import type { ChatMessage } from '../../api/trip-inquiries.api';
 import { TripInquiryStatus } from '../../types/enums';
 import type { TripStatus } from '../../types/enums';
+import { LOCAL_PUSH_BRIDGE_ENABLED } from '../../constants/config';
 import { connectRideSocket, onChatMessage, subscribeInquiryNotifications } from '../liveRide/socket';
 
 /**
- * Real-time notification bridge for simulator and local testing:
- * - Subscribes to accepted inquiry chat rooms over WebSocket for instant chat delivery
- * - Polls for incoming seat requests (Driver) every 10s
- * - Polls for inquiry status changes (Rider: Accepted / Declined) every 10s
- * - Polls for trip progress updates (Rider: Trip Started / Completed) every 10s
- * - Fallback check for new chat messages on active accepted inquiries
- *
- * Runs continuously in foreground AND background so notifications appear
- * as native system banners even when the user is on the home screen or another app.
+ * Local notification bridge — a developer aid for a simulator or device that
+ * gets no real pushes (an iOS simulator, a build without FCM). OFF unless
+ * EXPO_PUBLIC_LOCAL_PUSH_BRIDGE=true (constants/config.ts): the backend sends
+ * a real push for every event below, so with this on where pushes do arrive,
+ * each one shows twice. When on, for the signed-in user:
+ * - listens for chat messages on the ride socket (joining every accepted
+ *   inquiry's room) and shows "New message";
+ * - every 10 s polls the driver's inbox (new seat requests) and the rider's
+ *   requests (accepted / declined, trip started / completed), and the first
+ *   page of each accepted inquiry's chat.
+ * It only runs while the app is open (a plain interval — nothing here runs in
+ * the background). The notifications carry push-shaped data, so tapping one
+ * routes like a real push.
  */
-export function useLiveInquiryNotifications(userId: string | undefined): void {
+export function useLiveInquiryNotifications(signedInUserId: string | undefined): void {
   const queryClient = useQueryClient();
+  // Hooks run unconditionally; with the bridge off every effect below sees
+  // no user and does nothing.
+  const userId = LOCAL_PUSH_BRIDGE_ENABLED ? signedInUserId : undefined;
 
   const isDriverInitializedRef = useRef(false);
   const knownDriverInquiryIdsRef = useRef<Set<string>>(new Set());
@@ -78,8 +86,6 @@ export function useLiveInquiryNotifications(userId: string | undefined): void {
           },
           trigger: null,
         });
-
-        void queryClient.invalidateQueries({ queryKey: ['chatMessages', msg.tripInquiryId] });
       }
     });
 
@@ -187,7 +193,8 @@ export function useLiveInquiryNotifications(userId: string | undefined): void {
                   },
                   trigger: null,
                 });
-                void queryClient.invalidateQueries({ queryKey: ['tripInquiries'] });
+                void queryClient.invalidateQueries({ queryKey: ['myTripInquiries'] });
+                void queryClient.invalidateQueries({ queryKey: ['tripInquiry', req.id] });
                 void queryClient.invalidateQueries({ queryKey: ['myActiveRide'] });
               } else if (req.status === TripInquiryStatus.REJECTED) {
                 await Notifications.scheduleNotificationAsync({
@@ -206,7 +213,8 @@ export function useLiveInquiryNotifications(userId: string | undefined): void {
                   },
                   trigger: null,
                 });
-                void queryClient.invalidateQueries({ queryKey: ['tripInquiries'] });
+                void queryClient.invalidateQueries({ queryKey: ['myTripInquiries'] });
+                void queryClient.invalidateQueries({ queryKey: ['tripInquiry', req.id] });
               }
             }
 
@@ -298,7 +306,6 @@ export function useLiveInquiryNotifications(userId: string | undefined): void {
                       },
                       trigger: null,
                     });
-                    void queryClient.invalidateQueries({ queryKey: ['chatMessages', inqId] });
                   }
                 }
               }

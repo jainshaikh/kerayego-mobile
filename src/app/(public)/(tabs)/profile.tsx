@@ -33,6 +33,7 @@ function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
 
 function LoggedOutProfile() {
   const { spacing } = useTheme();
+  const { isRestoringSession } = useAuth();
   return (
     <AppScreen contentContainerStyle={{ padding: spacing.lg, justifyContent: 'center', flexGrow: 1 }}>
       <AppText variant="title" style={{ marginBottom: spacing.xs, textAlign: 'center' }}>
@@ -41,6 +42,16 @@ function LoggedOutProfile() {
       <AppText muted style={{ marginBottom: spacing.xl, textAlign: 'center' }}>
         Log in to save vehicles, send inquiries, and post trips.
       </AppText>
+      {/* A saved session the app couldn't reach KerayeGo to restore (no
+          connection at start-up) — it signs back in on its own. */}
+      {isRestoringSession ? (
+        <AppCard style={{ marginBottom: spacing.xl }}>
+          <AppText variant="caption" muted style={{ textAlign: 'center' }}>
+            Can&apos;t reach KerayeGo right now. You&apos;ll be signed back in automatically once you&apos;re
+            connected.
+          </AppText>
+        </AppCard>
+      ) : null}
       <AppButton title="Log in" onPress={() => router.push('/login')} />
       <View style={{ marginTop: spacing.md }}>
         <AppButton title="Create account" variant="secondary" onPress={() => router.push('/register')} />

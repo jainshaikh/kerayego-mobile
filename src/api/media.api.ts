@@ -3,18 +3,8 @@ import type { ApiResponse, UploadResult } from '../types/api.types';
 
 export type UploadContext = 'document' | 'trip_document' | 'user_vehicle_photo';
 
-export const DOCUMENT_TYPES = [
-  { value: 'BUSINESS_LICENSE', label: 'Business License' },
-  { value: 'TRADE_LICENSE', label: 'Trade License' },
-  { value: 'OWNERSHIP_PROOF', label: 'Ownership Proof' },
-  { value: 'ID_DOCUMENT', label: 'ID Document' },
-  { value: 'VEHICLE_REGISTRATION', label: 'Vehicle Registration' },
-  { value: 'VEHICLE_INSURANCE', label: 'Vehicle Insurance' },
-  { value: 'OTHER', label: 'Other Document' },
-] as const;
-
-// Shape returned by expo-image-picker / expo-document-picker results — RN's FormData
-// takes a { uri, name, type } object in place of a web File/Blob.
+// A picked file as expo-image-picker describes it — RN's FormData takes a
+// { uri, name, type } object in place of a web File/Blob.
 export interface LocalFile {
   uri: string;
   name: string;
@@ -27,7 +17,7 @@ export const mediaApi = {
     context: UploadContext,
     documentType?: string,
     // Client-generated id of the entity these files belong to (e.g. a vehicle being
-    // drafted before it's created) — groups uploads into a per-entity S3 folder.
+    // drafted before it's created) — groups uploads into a per-entity storage folder.
     entityId?: string,
     onProgress?: (percent: number) => void,
   ): Promise<UploadResult> => {

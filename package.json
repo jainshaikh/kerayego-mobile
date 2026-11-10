@@ -62,10 +62,11 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "type-check": "tsc --noEmit",
     "test": "jest",
-    "test:push": "xcrun simctl push booted com.kerayego.app test-push.apns",
-    "test:push:chat": "xcrun simctl push booted com.kerayego.app test-chat.apns",
-    "test:push:trip": "xcrun simctl push booted com.kerayego.app test-trip.apns"
+    "test:push": "xcrun simctl push booted com.kerayego.app scripts/push/test-push.apns",
+    "test:push:chat": "xcrun simctl push booted com.kerayego.app scripts/push/test-chat.apns",
+    "test:push:trip": "xcrun simctl push booted com.kerayego.app scripts/push/test-trip.apns"
   },
   "private": true
 }

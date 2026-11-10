@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { tripWallClockToInstant } from '../utils/tripDateTime';
+
 // One stop in a trip's ordered pickup or drop-off sequence (A → B → C → D → E) —
 // alternate meeting points at each end.
 export const tripStopFormSchema = z.object({
@@ -40,9 +42,11 @@ export const tripFormSchema = z.object({
   dropoffPoint: z.string().optional(),
   dropoffLat: z.number().optional(),
   dropoffLng: z.number().optional(),
+  // The picker's reading, in the phone's zone — what it means is that reading
+  // in Pakistan time (tripWallClockToInstant), which is what must be ahead.
   departureAt: z
     .date({ message: 'Pick a departure date and time' })
-    .refine((d) => d > new Date(), {
+    .refine((d) => tripWallClockToInstant(d).getTime() > Date.now(), {
       message: 'Departure must be in the future',
     }),
   // An emptied field holds null (see utils/numberInput.ts), hence the

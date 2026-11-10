@@ -4,12 +4,13 @@ import { router } from 'expo-router';
 import { useTheme } from '../../../theme';
 import { AppCard, AppText } from '../../../components/ui';
 import { formatPrice, titleCase } from '../../../utils/format';
+import { formatTripDateTime, tripTimeZoneShortSuffix } from '../../../utils/tripDateTime';
 import type { TripCard as TripCardData } from '../../../types/api.types';
 import { tripVehicle } from '../tripVehicle';
 
+// Pakistan time, like every trip time (utils/tripDateTime.ts).
 function formatDepartureDateTime(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `${formatTripDateTime(iso, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${tripTimeZoneShortSuffix()}`;
 }
 
 export function TripCard({ trip }: { trip: TripCardData }) {

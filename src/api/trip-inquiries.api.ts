@@ -180,11 +180,6 @@ export const tripInquiriesApi = {
     return { data: res.data.data, meta: res.data.meta as unknown as PaginationMeta };
   },
 
-  getMyCounts: async (): Promise<{ pending: number }> => {
-    const res = await apiClient.get<ApiResponse<{ pending: number }>>('/trip-inquiries/counts');
-    return res.data.data;
-  },
-
   getOne: async (id: string) => {
     const res = await apiClient.get<ApiResponse<TripInquiry>>(`/trip-inquiries/${id}`);
     return res.data.data;
@@ -199,11 +194,6 @@ export const tripInquiriesApi = {
   getInbox: async (params?: { tripId?: string; status?: TripInquiryStatus; page?: number; limit?: number }) => {
     const res = await apiClient.get<ApiResponse<TripInquiry[]>>('/my/trip-inquiries', { params });
     return { data: res.data.data, meta: res.data.meta as unknown as PaginationMeta };
-  },
-
-  getInboxCounts: async (): Promise<{ pending: number }> => {
-    const res = await apiClient.get<ApiResponse<{ pending: number }>>('/my/trip-inquiries/counts');
-    return res.data.data;
   },
 
   // Chat history catch-up (reconnect / initial sheet open) — the socket's

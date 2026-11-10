@@ -6,6 +6,13 @@ export const IS_DEV = APP_ENV === 'development';
 
 export const REQUEST_TIMEOUT_MS = 30000;
 
+// Developer aid, off unless set to 'true': features/notifications/
+// useLiveInquiryNotifications fakes ride notifications locally (a 10 s poll +
+// the ride socket) for a simulator or device that gets no real pushes. The
+// backend already sends a real push for every one of those events, so turning
+// it on anywhere pushes do arrive shows each notification twice.
+export const LOCAL_PUSH_BRIDGE_ENABLED = process.env.EXPO_PUBLIC_LOCAL_PUSH_BRIDGE === 'true';
+
 // "Near me" search radius — user-adjustable via NearMeControl. 8km default
 // mirrors web's DEFAULT_NEARBY_RADIUS_KM (lib/utils/userLocation.ts).
 export const DEFAULT_NEARBY_RADIUS_KM = 8;

@@ -5,11 +5,11 @@
 Guidance for AI agents modifying this codebase. Deeper technical detail lives in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — read that for anything not covered here.
 
-Verified directly against source (Expo Router, TypeScript). Ignore
-`docs/rental_services_mobile_react_native_expo_implementation_reference.md` and any other existing
-Markdown in this repo — they may be stale. `AGENTS.md`/root `CLAUDE.md` only point at Expo's versioned
-docs for SDK 57 and carry no app-specific information. Where behavior is surprising or contradicts a
-comment, the real behavior is stated as fact below.
+Verified directly against source (Expo Router, TypeScript; full re-check 2026-11-09). `AGENTS.md` only
+points at Expo's versioned docs for SDK 57 and `README.md` is the stock create-expo-app readme — neither
+carries app-specific information. Where behavior is surprising or contradicts a comment, the real
+behavior is stated as fact below. Note: this repo's `.gitignore` lists `docs/` (so `docs/ARCHITECTURE.md`
+is untracked) and `CLAUDE.md` (this file is tracked anyway, having been added before that rule).
 
 ## What this is
 
@@ -28,9 +28,10 @@ Architecture + Hermes enabled · TanStack React Query v5 · Axios · Zod v4 + Re
 `socket.io-client` 4.8.1 · `react-native-maps` · `react-native-keyboard-controller` (all keyboard
 avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help; see `docs/ARCHITECTURE.md`
 §8) · `expo-location` + `expo-task-manager` (driver's and customer's background location) · `expo-notifications` ·
-`expo-secure-store` · `expo-image-picker` · `expo-crypto` · `react-native-reanimated`/`react-native-worklets`
-(present as dependencies; not used anywhere in the audited design-system/component files). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 53 `*.test.ts(x)` files under `src/`, never under
+`expo-secure-store` · `expo-image-picker` (the only picker) · `expo-image` (every remote photo) ·
+`expo-crypto` · `react-native-reanimated`/`react-native-worklets`, `expo-glass-effect`, `expo-symbols`,
+`@expo/ui` (dependencies with no direct import anywhere in `src/`). **Unit tests:
+Jest** with the `jest-expo` preset (`npm test`): 55 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
 **The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; run the other files by name.
 
@@ -39,29 +40,42 @@ Jest** with the `jest-expo` preset (`npm test`): 53 `*.test.ts(x)` files under `
 ```
 src/
   app/                  Expo Router file-based routes (see below)
-  auth/                 auth-context.tsx (AuthProvider/useAuth), auth-guards.ts (mostly vestigial)
-  api/                  client.ts (axios), query-client.ts, errors.ts, one *.api.ts per domain
+  auth/                 auth-context.tsx (AuthProvider/useAuth), sessionRestore.ts (app-start restore
+                        retry rules), auth-guards.ts (roleHomePath — always '/')
+  api/                  client.ts (axios + shared refreshAccessToken), query-client.ts, errors.ts,
+                        13 domain *.api.ts files
+  constants/            config.ts (env, timeouts, near-me radii), markets.ts (PK/SA/AE phone codes; PKR for all)
   features/             one folder per domain: queries.ts (React Query hooks) + components/
-    liveRide/           socket.ts (shared Socket.IO client), LiveTripMap, ChatPanel, ChatModalSheet,
+    liveRide/           socket.ts (shared Socket.IO client + own reconnect loop), reconnectBackoff.ts,
+                        locationEmit.ts, chatHistory.ts, components/ (LiveTripMap, ChatPanel,
+                        ChatModalSheet, CustomerLocationSharingCard, CustomerLocationPermissionSheet),
                         rideVisuals.ts, geo.ts, openMapsNavigation.ts, useTripRoomPresence.ts,
                         useBlockBackButtonWhileActive.ts (shared driver+rider live-ride pieces);
                         backgroundLocation/ (driver's and customer's background location tasks, see below)
     location/           LocationField, LocationMapSheet (centre-pin map picker), usePlaceSearch.ts,
                         activeAutocomplete.ts
-    trips/              offlineSync.ts (offline action queue + shared runTripAction) + trip components;
-                        driverCockpit/ (driver day-of-execution hooks/components, see docs/ARCHITECTURE.md §10.1)
-    notifications/      pushToken.ts
+    trips/              offlineSync.ts (offline action queue, global flush, shared runTripAction),
+                        tripActionOverlay.ts + trip components; driverCockpit/ (driver day-of-execution
+                        hooks/components, see docs/ARCHITECTURE.md §10.1)
+    notifications/      pushToken.ts, pushTapInbox.ts + usePushTapNavigation.ts + pushRouting.ts (tap
+                        routing), chat deep links, useLiveInquiryNotifications.ts (opt-in dev bridge, off by default)
+    auth/               PhoneSignInFlow, EmailSignIn, CodeEntryStep + pure phoneSignIn.ts / signInCode.ts
+    phone-verification/ PhoneVerificationGate/Flow, ChangePhoneSheet, WhatsApp-updates toggle
+    account/, identity/ account-deletion helpers; identity-hold banner/hook
     media/              useImagePicker.ts
     trip-inquiries/     queries.ts; riderLiveTrip/ (rider live-view hooks/components, see docs/ARCHITECTURE.md §10.1)
   storage/              secure-storage.ts (expo-secure-store), offline-trip-queue.ts (AsyncStorage),
                         active-driver-trip.ts / active-customer-share.ts (AsyncStorage: what each
                         background location task reports for), rating-prompt.ts (AsyncStorage: rides
                         whose end-of-ride rating sheet already opened once)
-  components/ui/        hand-rolled design system (AppButton, AppInput, AppScreen, StatusBadge, ...)
-  components/maps/      NearMeControl, ResultsMap (search-results map, unrelated to LiveTripMap)
+  components/ui/        hand-rolled design system (AppButton, AppInput, AppScreen, AppSheet, StatusBadge, ...)
+  components/maps/      NearMeControl (the "near me" button — the app has no search-results map)
+  components/reviews/, components/auth/   rating badges/stars/lists; AuthRequiredSheet
   theme/                tokens.ts + index.ts (useTheme) — "Sunset Coral" palette mirrored from web
-  schemas/               Zod schemas per domain (one, vehicle.schema.ts, is dead code — see below)
+  schemas/              Zod schemas: auth, profile, booking, trip, trip-inquiry, user-vehicle
   types/                api.types.ts, enums.ts — mirrors backend Prisma types/enums
+  hooks/, utils/        useNow (shared 1 s clock), useAppInForeground, usePullToRefresh, ...;
+                        format, rentalDuration, cnic, numberInput, tripDateTime
 android/                Locally generated by `expo prebuild` — gitignored, not hand-maintained
 example/                Leftover default Expo template scaffold — NOT part of the app, ignore it
 ```
@@ -72,15 +86,17 @@ Routes (Expo Router; parenthesized segments are route groups, stripped from the 
   the emailed-code backup — the app has no passwords), verify-email. No guard redirects authenticated
   users away from these.
 - `(public)/(tabs)/` — the real bottom tab bar (`expo-router`'s `Tabs`, 4 screens: `index` (resolves to
-  `/`, "Vehicles"), `trips`, `providers`, `profile`). Everything here is public/unauthenticated-readable.
-  `(public)/vehicle/[id]`, `provider/[id]`, `trip/[id]` are detail screens (looked up by **slug** despite
-  the `[id]` param name — explicit code comments in both files say so).
-- `account/` — auth-gated stack (see Authentication below): inquiries, saved, reviews, profile,
-  my-trips/_, my-vehicles/_, trip-requests, trip-request/[id].
+  `/`, "Vehicles"), `trips` ("Carpool"), `providers`, `profile`). Everything here is
+  public/unauthenticated-readable. `(public)/vehicle/[id]` and `provider/[id]` are detail screens looked
+  up by **slug** despite the `[id]` param name (explicit code comments in both files say so);
+  `(public)/trip/[id]` really is looked up by id.
+- `account/` — auth-gated stack (see Authentication below): inquiries, inquiry/[id], saved, reviews,
+  profile, delete-account, my-trips/_, my-vehicles/_, trip-requests, trip-request/[id].
 
 **Naming trap**: `components/ui/TabBar.tsx` is _not_ the app's tab bar — it's a small custom in-screen
-segmented control used in exactly two screens (`my-trips/[id].tsx`, `trip-request/[id].tsx`) to flip
-between sub-views. The real bottom tab navigator is `(public)/(tabs)/_layout.tsx`'s `Tabs` component.
+segmented control used only by the rider's live view (`RiderLiveView`, Stops/Driver/Summary). The
+driver's cockpit has no tabs (its Route/Riders/Details views are sheets). The real bottom tab navigator
+is `(public)/(tabs)/_layout.tsx`'s `Tabs` component.
 
 ## Authentication & session
 
@@ -98,12 +114,21 @@ All three store the session the same way (`AuthContext`'s `startSession`: refres
 `deletionCancelled` shown once by `DeletionCancelledSheet`, then `GET /users/me` re-read). The backend's
 password endpoints and `POST /auth/register` exist for old app versions only — never call them. On launch: read the
 stored refresh token → `POST /auth/refresh` → `GET /users/me` → register push token (fire-and-forget).
-The axios response interceptor does single-flight 401-refresh-and-retry with a subscriber queue for
-concurrent requests. `X-Client-Type: mobile` is sent on every request so the backend returns the refresh
-token in the response body instead of a cookie.
+Only a 401 triggers a refresh: the axios response interceptor retries once through
+`refreshAccessToken()` (`api/client.ts`) — the app's single, shared, single-flight way to mint a token
+(also used by bootstrap and the ride socket's reconnect), guarded by a session epoch so a refresh from a
+previous session can't revive or expire the current one. The backend rejecting the refresh token
+(401/403) expires the session; a transient failure (offline/5xx/429) keeps it. The same holds at app
+start (2026-11-09): if the stored session can't be restored because the server can't be reached, the
+refresh token is kept, the user is signed out *for now* (`isRestoringSession`; the Profile tab says
+they'll be signed back in), and the restore is retried every 15 s and on every return to the foreground
+until it goes through — only the server refusing the token signs them out (`auth/sessionRestore.ts`).
+`X-Client-Type: mobile` is sent on every request so the backend returns the refresh token in the
+response body instead of a cookie.
 
 **Route guarding is not centralized.** `src/auth/auth-guards.ts` looks like a guard module but its only
-export, `roleHomePath(role)`, always returns `'/'` regardless of role — vestigial. Real enforcement
+export, `roleHomePath(role)`, always returns `'/'` regardless of role (login/register's fallback
+destination when there's no `returnTo`). Real enforcement
 lives in `src/app/account/_layout.tsx`, which redirects unauthenticated users to `/login`,
 `ADMIN`/`SUPER_ADMIN` users to `/` (this app has no admin experience at all), and unverified-email users
 to `/verify-email` unless their phone is verified (`user.phoneVerified` — a phone sign-up's email starts
@@ -124,8 +149,16 @@ an `AppSheet`, plus the optimistic "WhatsApp updates" switch (`PATCH /users/me {
 Only a 401 ever triggers a token refresh. Details: `docs/ARCHITECTURE.md` §6.
 
 Push tokens are the **native platform token** (FCM on Android / APNs on iOS, via
-`Notifications.getDevicePushTokenAsync()`) — **not** the Expo push token — registered/unregistered
-against `POST`/`DELETE /device-tokens`, tied to login/logout.
+`Notifications.getDevicePushTokenAsync()`) — **not** the Expo push token — registered on bootstrap,
+every sign-in and token rotation (`POST /device-tokens`), unregistered before logout
+(`DELETE /device-tokens`), and invalidated natively (no backend call) on session expiry or account
+deletion. Notification **taps** are routed role-aware by `features/notifications/pushRouting.ts`
+(`recipientRole` DRIVER → `/account/my-trips/:tripId`, RIDER → `/account/trip-request/:id`, bookings →
+`/account/inquiry/:id`, vehicle decisions → `/account/my-vehicles/:id`), held until the session is ready.
+`useLiveInquiryNotifications` (root layout) is a developer aid that fakes these notifications locally (a
+10 s poll + the ride socket) for a simulator that gets no pushes. It is **off** unless
+`EXPO_PUBLIC_LOCAL_PUSH_BRIDGE=true` — with it on where real pushes arrive, every notification shows
+twice. iOS-simulator push payloads for testing tap routing: `npm run test:push*` (`scripts/push/`).
 
 ## State management & storage
 
@@ -133,42 +166,46 @@ against `POST`/`DELETE /device-tokens`, tied to login/logout.
   `staleTime`, retries skipped entirely for `unauthorized`/`forbidden`/`not_found`/`validation` error
   kinds (from `normalizeApiError`), otherwise retried up to 2×; mutations never retried.
 - **Auth state**: React Context (`auth-context.tsx`), not Zustand/Redux.
-- **Persistent storage**: `expo-secure-store` for the refresh token (`storage/secure-storage.ts`) — a
-  second cached-user blob is written to but never read anywhere (dead storage). `AsyncStorage` backs the
-  offline trip-action queue (`storage/offline-trip-queue.ts`), a single unscoped FIFO list filtered by
-  `tripId` only at read time, with no TTL/expiry. AsyncStorage also holds `liveRide.activeDriverTrip`
+- **Persistent storage**: `expo-secure-store` for the refresh token only (`storage/secure-storage.ts`,
+  key `auth.refreshToken.v2`, `AFTER_FIRST_UNLOCK` so the background task can refresh on a locked
+  iPhone; the old `auth.refreshToken` key is read as a fallback and removed on the next write).
+  `AsyncStorage` backs the offline trip-action queue (`storage/offline-trip-queue.ts`): every item is
+  stamped with its user and trip and read per user, with a 24 h TTL / 20 counted attempts and a log of
+  discarded actions (`trips.offlineQueue.dropped`) shown to the driver. AsyncStorage also holds `liveRide.activeDriverTrip`
   (`storage/active-driver-trip.ts`), the trip and driver the background location task is sharing for, and
   `liveRide.activeCustomerShare` (`storage/active-customer-share.ts`), the seat/booking and customer the
   customer location task is sharing for.
-- **Module-level singletons** (not React state): the shared Socket.IO connection (`features/liveRide/socket.ts`),
-  and `activeAutocomplete.ts` (cross-field autocomplete-dropdown exclusivity, mirroring the same pattern
-  documented on `kerayego-web`).
+- **Module-level singletons** (not React state): the shared Socket.IO connection (`features/liveRide/socket.ts`,
+  torn down only on logout/expiry), `activeAutocomplete.ts` (cross-field autocomplete-dropdown
+  exclusivity, mirroring the same pattern documented on `kerayego-web`), the offline queue's session
+  store, the location tasks' status stores, and `hooks/useNow.ts`'s shared 1-second clock.
 
 ## API layer & backend communication
 
-11 domain `*.api.ts` files + `errors.ts` (`normalizeApiError`, 9 error kinds) + `client.ts` (axios
-instance, `X-Client-Type: mobile`, single-flight 401 refresh). The dominant pattern is unwrapping
-`res.data.data` — the only exceptions are 4 fire-and-forget mutations (`deviceTokensApi.register`/
-`unregister`, `usersApi.removeSavedVehicle`, `mediaApi.delete`) that return `void`. `mediaApi.delete` has
-**zero callers anywhere in the app** (dead code). `normalizeApiError`'s friendly-message table has no
-dedicated entry for `validation`/`conflict` kinds — those fall back to a generic message absent a
-backend-supplied one.
+13 domain `*.api.ts` files (auth, users, listings, providers, booking-requests, reviews, trips,
+trip-inquiries, user-vehicles, geo, location-sharing, media, device-tokens) + `errors.ts`
+(`normalizeApiError`, 9 error kinds, passes through the backend's `error.code` and `retryAfterSeconds`;
+`isRetryableErrorKind`) + `client.ts` (axios instance, 30 s timeout, `X-Client-Type: mobile`, shared
+refresh). The dominant pattern is unwrapping `res.data.data` (paginated lists return `{ data, meta }`) —
+the only exceptions are 4 mutations that return `void` (`deviceTokensApi.register`/`unregister`,
+`usersApi.removeSavedVehicle`, the user-vehicle delete `DELETE /my/vehicles/:id`). There is no media
+delete call. `normalizeApiError`'s friendly-message table has no dedicated entry for
+`validation`/`conflict` kinds — those fall back to a generic message absent a backend-supplied one.
 
-`types/enums.ts` mirrors 15 backend Prisma enums plus mobile-only derived helpers (`userBookingActions`,
+`types/enums.ts` mirrors 16 backend Prisma enums plus mobile-only derived helpers (`userBookingActions`,
 `tripPosterActions`, `tripInquiryRiderActions`/`PosterActions`) that gate which UI actions appear per
 status — some of these **hardcode a narrower result than the mirrored transition tables actually allow**
 (e.g. `userBookingActions` only ever offers `CANCELLED`, even though `BOOKING_TRANSITIONS`'s own `PENDING`
-row lists `USER` as allowed to reach `CONTACTED`/`REJECTED` too). There are also **three inconsistent
-"document type" lists** in this codebase (`enums.ts`'s `DocumentType`, 8 values; `media.api.ts`'s
-`DOCUMENT_TYPES` UI constant, 7 values, omits `DRIVING_LICENSE`; `UserVehicleDocument.documentType`'s
-union, 5 values) — check which one a given screen actually uses before assuming they match.
+row lists `USER` as allowed to reach `CONTACTED`/`REJECTED` too). Every status enum but `UserStatus` has a
+`*StatusMeta` label/tone map there. "Document type" comes in two lists: `enums.ts`'s `DocumentType`
+(10 values) and `UserVehicleDocumentType` (the 4 a personal vehicle carries; the form iterates
+`USER_VEHICLE_DOCUMENT_TYPES` from `features/user-vehicles/userVehicleDraft.ts`).
 
 ## Rental flow (consumer-only)
 
 Browse listings/providers (infinite scroll), vehicle/provider detail, submit a booking-request
 ("Send inquiry"), save/unsave a vehicle, leave a review. **There is no vehicle-listing-creation or
-showroom-management screen anywhere in this app** — `schemas/vehicle.schema.ts` (mirroring the backend's
-`CreateVehicleDto`) is confirmed dead code with zero importers. The visually similar "My vehicles" under
+showroom-management screen anywhere in this app**, and no rental-listing schema. The visually similar "My vehicles" under
 `account/my-vehicles/*` is a **different domain** — it registers a user's personal carpool vehicle
 (`userVehicleFormSchema`), not a rental listing.
 
@@ -176,10 +213,18 @@ showroom-management screen anywhere in this app** — `schemas/vehicle.schema.ts
 
 Full public search → post a trip (gated on an `APPROVED` personal vehicle) → rider requests seats → **day-of
 execution**, which web has no equivalent of at all: `account/my-trips/[id].tsx` is the driver's cockpit
-(Start trip, tabbed Stops/Riders/Details manifest, geofenced "Reached" per stop, per-rider pickup/dropoff,
-End trip), backed by an **offline action queue** (AsyncStorage FIFO, flushed on mount/app-foreground/15s
-interval only — never in the background). `account/trip-request/[id].tsx` is the rider's live view
-(self-reported arrival, chat, driver call link).
+(Start trip → a **leg-by-leg** live view: navigate to the current stop, **Arrived** within 100 m or
+automatically after 15 s within 50 m, a per-stop checklist of riders — Picked up / no-show after 5 min /
+Dropped off — then **Start next leg**; Route/Riders/Details sheets; **End ride** → `DriverRideSummary`),
+backed by an **offline action queue** (per-user AsyncStorage FIFO, flushed app-wide from the root layout
+on foreground and every 15 s, and on the trip screen on mount and after each enqueue — never in the
+background). `account/trip-request/[id].tsx` is the rider's live view (tabbed Stops/Driver/Summary,
+self-reported arrival and **Reached** at drop-off, chat, call/WhatsApp). Both screens hide the header,
+disable swipe-back and block the Android back button while the ride is locked. There is no trip-edit
+screen (and no client call to `PATCH /my/trips/:id`). **Every trip time is Pakistan time**
+(`utils/tripDateTime.ts`, the same rule as web): displays format in `Asia/Karachi` with a "PKT" /
+"(Pakistan time)" hint when the phone is in another zone, and the post-a-trip picker's reading is
+taken as Pakistan time (`tripWallClockToInstant`, mirroring web's `karachiLocalToISOString`).
 
 **Live tracking**: a single shared Socket.IO connection (`features/liveRide/socket.ts`) to the backend's
 `/ride` namespace. Two GPS sources, one at a time: while the app is open, the cockpit's
@@ -190,16 +235,20 @@ decisions: When-In-Use permission only (never "Allow all the time"); iOS backgro
 blue indicator; Android foreground service with a "Trip in progress" notification that **dies when the
 app is swiped away**. The task is registered from the custom entry `index.js` so it exists even when the
 OS starts the app without UI; binaries without `expo-task-manager` have no background sharing, and the
-cockpit says so. It stops on trip end, logout, the active ride going away, or a 404/409 from the
-location endpoint. **Customer sharing** (carpool riders and rental customers): a second task,
+cockpit says so. It stops on trip end, logout, the active ride going away, or a 404/409 (or a 401/403
+after refresh) from the location endpoint. **Customer sharing** (carpool riders and rental customers): a second task,
 `kerayego.customer-location`, posts the customer's position to their driver every ~10 s in the foreground
 and background while the backend says a window is open (until pickup); `useCustomerLocationReconcile`
 (root layout) polls `GET /users/me/location-sharing` and starts it from the foreground only, after a short
 permission explanation sheet; the rider screens and rental booking detail show a "Sharing your location
 with your driver" card with Stop/Resume. Never both tasks at once for one person. The rental booking
 detail also shows the assigned driver live (`/live-driver`, polled 10 s), and the driver cockpit shows
-riders' shared positions. Details: `docs/ARCHITECTURE.md` §12. **Chat** (`ChatModalSheet`/`ChatPanel`) rides the same socket, optimistic-send-then-reconcile
-by client-generated UUID, with typing throttling and read receipts.
+riders' shared positions. Details: `docs/ARCHITECTURE.md` §12. The socket is created with
+`autoConnect: false`, connected explicitly when a token exists, and runs **its own** jittered reconnect
+loop (refreshing the token first) when the server refuses or closes the connection; it's torn down on
+logout/expiry. **Chat** (`ChatModalSheet`/`ChatPanel`) rides the same socket: full history paged via
+`meta.nextCursor`, a catch-up fetch after every room join, room joined only in the foreground,
+optimistic-send-then-reconcile by client-generated UUID, typing throttling and read receipts.
 
 Google Places/geocoding calls are **proxied through the backend** (`/geo/*`), not called directly from
 the device — mobile's own Maps API key is Maps-SDK-only (map tile rendering), not Places-scoped.
@@ -221,11 +270,11 @@ build.
 
 ## Known gaps / things that will surprise you
 
-- `package.json`'s `reset-project` script points at `./scripts/reset-project.js`, but that path is
-  **empty** — a same-named file only exists under the unrelated `example/` folder (a leftover Expo
-  template copy) and would not be resolved by the script. Running `npm run reset-project` fails as-is.
-- A comment above `refreshAccessToken()` in `api/client.ts` references `auth/auth-session.ts`, which
-  **does not exist anywhere in the repo** — a stale/dangling reference, don't chase it.
+- `npm run test:push`/`test:push:chat`/`test:push:trip` (`xcrun simctl push …`) need a Mac with a booted
+  iOS simulator. Their payloads (`scripts/push/*.apns`) carry `REPLACE_WITH_…` ids — put real ones in
+  to land on a real screen. The push data sits under the payload's top-level `"body"` key, because
+  that's where expo-notifications reads an iOS remote notification's data from.
+- `npm run type-check` (`tsc --noEmit`) is the standalone type-check.
 - The `EligibleReviewsList.tsx` vs. `account/_layout.tsx` contradiction on whether `PROVIDER` accounts
   use this app at all (see Authentication above) is unresolved in the source itself.
 - Release Android signing/minification is not production-ready (debug keystore, no shrink/minify).

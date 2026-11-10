@@ -9,7 +9,8 @@ import type { TripManifest } from '../../../api/trips.api';
 import type { TripDetail } from '../../../types/api.types';
 import { TripStatus } from '../../../types/enums';
 import { currencyForMarket } from '../../../constants/markets';
-import { formatDate, formatPrice } from '../../../utils/format';
+import { formatPrice } from '../../../utils/format';
+import { formatTripDateTime } from '../../../utils/tripDateTime';
 import { useRatingPrompt } from '../../reviews/useRatingPrompt';
 import { driverTripPendingRatings } from '../../reviews/ratingPrompt';
 import { RateSheet } from '../../reviews/components/RateSheet';
@@ -89,7 +90,7 @@ export function DriverRideSummary({
             {trip.originCity} → {trip.destinationCity}
           </AppText>
           <AppText muted variant="caption">
-            {formatDate(trip.departureAt)}
+            {formatTripDateTime(trip.departureAt, { day: 'numeric', month: 'short', year: 'numeric' })}
           </AppText>
         </View>
 

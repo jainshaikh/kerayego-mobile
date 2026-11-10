@@ -14,20 +14,6 @@ export function useInfiniteListings(filters: Omit<ListingFilters, 'page'>) {
   });
 }
 
-export function useFeaturedVehicles(limit = 8) {
-  return useQuery({
-    queryKey: ['listings', 'featured', limit],
-    queryFn: () => listingsApi.getFeatured(limit),
-  });
-}
-
-export function useListings(filters: ListingFilters) {
-  return useQuery({
-    queryKey: ['listings', filters],
-    queryFn: () => listingsApi.getAll(filters),
-  });
-}
-
 export function useVehicleDetail(slug: string | undefined) {
   return useQuery({
     queryKey: ['vehicle', slug],

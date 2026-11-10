@@ -25,16 +25,18 @@ import {
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { formatPrice, titleCase } from '../../../utils/format';
+import { formatTripDateTime, tripTimeZoneSuffix } from '../../../utils/tripDateTime';
 
+// Pakistan time, like every trip time (utils/tripDateTime.ts).
 function formatDepartureDateTime(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleString(undefined, {
+  const when = formatTripDateTime(iso, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
   });
+  return `${when}${tripTimeZoneSuffix()}`;
 }
 
 export default function TripDetailScreen() {

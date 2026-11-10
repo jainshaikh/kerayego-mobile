@@ -43,11 +43,6 @@ export const listingsApi = {
     return { data: res.data.data, meta: res.data.meta as unknown as PaginationMetaExtended };
   },
 
-  getFeatured: async (limit = 8): Promise<VehicleCard[]> => {
-    const res = await apiClient.get<ApiResponse<VehicleCard[]>>('/listings/featured', { params: { limit } });
-    return res.data.data;
-  },
-
   getBySlug: async (slug: string): Promise<VehicleDetail> => {
     const res = await apiClient.get<ApiResponse<VehicleDetail>>(`/listings/${slug}`);
     return res.data.data;

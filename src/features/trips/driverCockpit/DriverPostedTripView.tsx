@@ -18,7 +18,8 @@ import {
   tripStatusMeta,
 } from '../../../types/enums';
 import { normalizeApiError } from '../../../api/errors';
-import { formatDate, formatPrice } from '../../../utils/format';
+import { formatPrice } from '../../../utils/format';
+import { formatTripDateTime, tripTimeZoneSuffix } from '../../../utils/tripDateTime';
 import type { DriverTripActions } from './useDriverTripActions';
 import { tripVehicle } from '../tripVehicle';
 import type { OfflineTripQueue } from '../offlineSync';
@@ -120,7 +121,10 @@ export function DriverPostedTripView({
       ) : null}
 
       <AppCard style={{ marginTop: spacing.lg }}>
-        <Row label="Departure" value={formatDate(trip.departureAt)} />
+        <Row
+          label="Departure"
+          value={`${formatTripDateTime(trip.departureAt, { dateStyle: 'medium', timeStyle: 'short' })}${tripTimeZoneSuffix()}`}
+        />
         <Row label="Pickup point" value={trip.pickupPoint} />
         {trip.dropoffPoint ? <Row label="Drop-off point" value={trip.dropoffPoint} /> : null}
         <Row label="Available seats" value={String(trip.availableSeats)} />

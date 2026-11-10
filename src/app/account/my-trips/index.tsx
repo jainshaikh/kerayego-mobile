@@ -8,6 +8,7 @@ import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { tripStatusMeta } from '../../../types/enums';
 import { formatPrice } from '../../../utils/format';
+import { formatTripDateTime, tripTimeZoneShortSuffix } from '../../../utils/tripDateTime';
 
 export default function MyTripsScreen() {
   const { spacing } = useTheme();
@@ -39,7 +40,8 @@ export default function MyTripsScreen() {
                   <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
                 </View>
                 <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
-                  {new Date(item.departureAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {formatTripDateTime(item.departureAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {tripTimeZoneShortSuffix()}
                   {' · '}
                   {formatPrice(item.pricePerSeat)}/seat
                 </AppText>

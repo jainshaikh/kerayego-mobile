@@ -9,6 +9,7 @@ import { useIdentityHold } from '../../../features/identity/useIdentityHold';
 import { AppScreen, AppText } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripFormValues } from '../../../schemas/trip.schema';
+import { tripWallClockToInstant } from '../../../utils/tripDateTime';
 
 export default function NewTripScreen() {
   const { spacing, colors } = useTheme();
@@ -34,7 +35,8 @@ export default function NewTripScreen() {
         dropoffPoint: values.dropoffPoint || lastDropoff?.label,
         dropoffLat: values.dropoffLat ?? lastDropoff?.lat,
         dropoffLng: values.dropoffLng ?? lastDropoff?.lng,
-        departureAt: values.departureAt.toISOString(),
+        // The picked reading is Pakistan time, whatever zone the phone is in.
+        departureAt: tripWallClockToInstant(values.departureAt).toISOString(),
         availableSeats: values.availableSeats,
         pricePerSeat: values.pricePerSeat,
         contactNumber: values.contactNumber,

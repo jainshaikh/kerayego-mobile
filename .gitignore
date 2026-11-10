@@ -42,9 +42,3 @@ example
 # generated native folders
 /ios
 /android
-
-#Documents
-*.docs
-docs/
-CLAUDE.md
-/CLAUDE.md

@@ -44,6 +44,23 @@ export function tripTimeZoneSuffix(deviceOffsetMinutes?: number): string {
   return isDeviceInTripTimezone(deviceOffsetMinutes) ? '' : ' (Pakistan time)';
 }
 
+/** " PKT" after a trip time on a compact card or list row, unless the phone already shows Pakistan time. */
+export function tripTimeZoneShortSuffix(deviceOffsetMinutes?: number): string {
+  return isDeviceInTripTimezone(deviceOffsetMinutes) ? '' : ' PKT';
+}
+
+/**
+ * The instant a departure picked on the phone means. The date/time picker
+ * works in the phone's own zone, but trip times are Pakistan time — so the
+ * picked reading (e.g. 8 Oct, 9:30 PM) is taken as that reading in Pakistan,
+ * whatever zone the phone is in. Seconds are dropped. Mirrors web's
+ * karachiLocalToISOString (lib/utils/datetime.ts).
+ */
+export function tripWallClockToInstant(picked: Date): Date {
+  const asUtc = Date.UTC(picked.getFullYear(), picked.getMonth(), picked.getDate(), picked.getHours(), picked.getMinutes());
+  return new Date(asUtc - TRIP_UTC_OFFSET_MINUTES * 60_000);
+}
+
 function plural(count: number, unit: string): string {
   return `${count} ${unit}${count !== 1 ? 's' : ''}`;
 }

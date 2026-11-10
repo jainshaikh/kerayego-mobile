@@ -5,7 +5,9 @@ import {
   formatTripDateTime,
   formatTripTime,
   isDeviceInTripTimezone,
+  tripTimeZoneShortSuffix,
   tripTimeZoneSuffix,
+  tripWallClockToInstant,
 } from './tripDateTime';
 
 const DEPARTURE = '2026-10-09T04:00:00.000Z';
@@ -76,5 +78,37 @@ describe('isDeviceInTripTimezone / tripTimeZoneSuffix', () => {
   it('labels the time for a phone elsewhere (e.g. Riyadh, UTC+3)', () => {
     expect(isDeviceInTripTimezone(-180)).toBe(false);
     expect(tripTimeZoneSuffix(-180)).toBe(' (Pakistan time)');
+  });
+});
+
+describe('tripTimeZoneShortSuffix', () => {
+  it('is empty on a phone already on Pakistan time (UTC+5)', () => {
+    expect(tripTimeZoneShortSuffix(-300)).toBe('');
+  });
+
+  it('says PKT on a phone elsewhere (e.g. Dubai, UTC+4)', () => {
+    expect(tripTimeZoneShortSuffix(-240)).toBe(' PKT');
+  });
+});
+
+// The post-a-trip picker hands back a Date in the phone's own zone; its
+// wall-clock reading is what the driver meant, in Pakistan time. Built from
+// local components, so this holds whatever zone Jest runs in.
+describe('tripWallClockToInstant', () => {
+  it('takes the picked reading as Pakistan time', () => {
+    expect(tripWallClockToInstant(new Date(2026, 9, 8, 21, 30)).toISOString()).toBe('2026-10-08T16:30:00.000Z');
+  });
+
+  it('rolls back across midnight and month ends', () => {
+    expect(tripWallClockToInstant(new Date(2026, 10, 1, 2, 15)).toISOString()).toBe('2026-10-31T21:15:00.000Z');
+  });
+
+  it('drops seconds', () => {
+    expect(tripWallClockToInstant(new Date(2026, 9, 8, 21, 30, 45, 500)).toISOString()).toBe('2026-10-08T16:30:00.000Z');
+  });
+
+  it('round-trips through the Pakistan-time formatter', () => {
+    const instant = tripWallClockToInstant(new Date(2026, 9, 8, 21, 30)).toISOString();
+    expect(formatTripTime(instant)).toBe(new Date(2026, 9, 8, 21, 30).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }));
   });
 });

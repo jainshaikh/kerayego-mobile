@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AppState } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { authApi, type PhoneRegisterPayload, type PhoneVerifyPayload, type VerifyCodePayload } from '../api/auth.api';
@@ -22,11 +23,19 @@ import {
 } from '../features/notifications/pushToken';
 import { needsPhoneVerification, userAfterPhoneNotVerified } from '../features/phone-verification/phoneVerification';
 import type { AuthUser, LoginResult, PhoneSignupRequired, User } from '../types/api.types';
+import { SESSION_RESTORE_RETRY_MS, sessionRestoreFailureAction } from './sessionRestore';
 
 interface AuthContextValue {
   user: AuthUser | User | null;
   isAuthenticated: boolean;
   isBootstrapping: boolean;
+  /**
+   * True while a stored session couldn't be restored because the server
+   * couldn't be reached (an app start offline, or during server trouble): the
+   * refresh token is kept and the restore retried while the app is open, so
+   * the person is signed back in once it goes through. Signed out meanwhile.
+   */
+  isRestoringSession: boolean;
   /**
    * POST /auth/code/verify, then stores the session (as the old password
    * login did) and re-reads the user — a code sign-in verifies the email.
@@ -73,11 +82,22 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 // like 'expired', with no backend cleanup call.
 type SessionEndReason = 'logout' | 'expired' | 'deleted';
 
+// restoreSession's outcome. 'restored': `user` is the signed-in user, for the
+// caller to put in state. 'retry': the server couldn't be reached — the
+// refresh token stays stored. 'stale': a sign-in, sign-out or expiry happened
+// while it ran, so it did nothing.
+type RestoreResult = { kind: 'restored'; user: User } | { kind: 'signedOut' | 'retry' | 'stale' };
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | User | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
   const [deletionCancelledNotice, setDeletionCancelledNotice] = useState(false);
   const queryClient = useQueryClient();
+  // Bumped whenever the session changes hands here (a sign-in, a sign-out or
+  // an expiry), so a session restore still in flight from before never acts
+  // on what it finds afterwards.
+  const sessionGenerationRef = useRef(0);
   // One GET /users/me at a time for a burst of 403 PHONE_NOT_VERIFIED.
   const phoneRecheck = useRef<Promise<void> | null>(null);
   // Read by that re-check: nothing to re-read while the gate already shows
@@ -89,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearSession = useCallback(
     async (reason: SessionEndReason) => {
+      sessionGenerationRef.current += 1;
+      setIsRestoringSession(false);
       // Stops any queue flush still running for this user before their token
       // goes. Their queued trip actions themselves stay on the device — on
       // logout and on expiry alike — and replay only once they sign back in
@@ -140,50 +162,98 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [queryClient]);
 
+  // The stored session: refresh token → POST /auth/refresh → GET /users/me.
+  // Never rejects, and sets no React state itself (the caller puts the user in
+  // state). A failure that says nothing about the session (offline, 5xx —
+  // sessionRestoreFailureAction) keeps the refresh token for a retry; only the
+  // server refusing it signs the person out.
+  const restoreSession = useCallback(async (): Promise<RestoreResult> => {
+    const generation = sessionGenerationRef.current;
+    const isStale = () => generation !== sessionGenerationRef.current;
+    try {
+      const storedRefreshToken = await getRefreshToken();
+      if (isStale()) return { kind: 'stale' };
+      if (!storedRefreshToken) return { kind: 'signedOut' };
+
+      // null: no session left (the backend refused the token, and
+      // refreshAccessToken has already expired it).
+      const newAccessToken = await refreshAccessToken();
+      if (isStale()) return { kind: 'stale' };
+      if (!newAccessToken) {
+        await clearAllAuthStorage();
+        return { kind: 'signedOut' };
+      }
+
+      const me = await usersApi.getMe();
+      if (isStale()) return { kind: 'stale' };
+      setOfflineQueueOwner(me.id);
+      setDriverLocationSessionUser(me.id);
+      setCustomerLocationSessionUser(me.id);
+      registerPushToken();
+      return { kind: 'restored', user: me };
+    } catch (error) {
+      if (isStale()) return { kind: 'stale' };
+      // Nobody is signed in until a restore completes — drop any access token
+      // a refresh that did go through left in memory.
+      setAccessToken(null);
+      if (sessionRestoreFailureAction(error) === 'retry') return { kind: 'retry' };
+      await clearAllAuthStorage().catch(() => {});
+      return { kind: 'signedOut' };
+    }
+  }, []);
+
   useEffect(() => {
     setOnSessionExpired(() => {
       clearSession('expired');
     });
     setOnPhoneNotVerified(recheckPhoneVerification);
 
-    (async () => {
-      try {
-        const storedRefreshToken = await getRefreshToken();
-        if (!storedRefreshToken) {
-          setIsBootstrapping(false);
-          return;
-        }
-
-        const newAccessToken = await refreshAccessToken();
-        if (!newAccessToken) {
-          await clearAllAuthStorage();
-          setIsBootstrapping(false);
-          return;
-        }
-
-        const me = await usersApi.getMe();
-        setOfflineQueueOwner(me.id);
-        setDriverLocationSessionUser(me.id);
-        setCustomerLocationSessionUser(me.id);
-        setUser(me);
-        registerPushToken();
-      } catch {
-        await clearAllAuthStorage();
-        setAccessToken(null);
-      } finally {
-        setIsBootstrapping(false);
-      }
-    })();
+    void restoreSession().then((result) => {
+      if (result.kind === 'restored') setUser(result.user);
+      if (result.kind === 'retry') setIsRestoringSession(true);
+      setIsBootstrapping(false);
+    });
 
     return () => {
       setOnSessionExpired(null);
       setOnPhoneNotVerified(null);
     };
-  }, [clearSession, recheckPhoneVerification]);
+  }, [clearSession, recheckPhoneVerification, restoreSession]);
+
+  // A stored session the server couldn't be reached for: try again while the
+  // app is open — on every return to the foreground and every 15 s — until it
+  // goes through, the server refuses it, or someone signs in or out.
+  useEffect(() => {
+    if (!isRestoringSession) return;
+    let cancelled = false;
+    let inFlight = false;
+    const attempt = async () => {
+      if (inFlight || AppState.currentState === 'background') return;
+      inFlight = true;
+      try {
+        const result = await restoreSession();
+        if (result.kind === 'restored') setUser(result.user);
+        if (!cancelled && result.kind !== 'retry') setIsRestoringSession(false);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void attempt();
+    });
+    const interval = setInterval(() => void attempt(), SESSION_RESTORE_RETRY_MS);
+    return () => {
+      cancelled = true;
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, [isRestoringSession, restoreSession]);
 
   // Every sign-in's session (email code, phone code, phone sign-up — all the
   // /auth/login shape, refresh token in the body for X-Client-Type: mobile).
   const startSession = useCallback(async (result: LoginResult) => {
+    sessionGenerationRef.current += 1;
+    setIsRestoringSession(false);
     setAccessToken(result.accessToken);
     setOfflineQueueOwner(result.user.id);
     setDriverLocationSessionUser(result.user.id);
@@ -262,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: !!user,
       isBootstrapping,
+      isRestoringSession,
       signInWithCode,
       signInWithPhone,
       registerWithPhone,
@@ -275,6 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       user,
       isBootstrapping,
+      isRestoringSession,
       signInWithCode,
       signInWithPhone,
       registerWithPhone,

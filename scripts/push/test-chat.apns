@@ -1,0 +1,19 @@
+{
+  "Simulator Target Bundle": "com.kerayego.app",
+  "aps": {
+    "alert": {
+      "title": "New message",
+      "body": "Hi, I'm at the pickup point."
+    },
+    "sound": "default"
+  },
+  "body": {
+    "v": "2",
+    "type": "chat_message",
+    "recipientRole": "RIDER",
+    "tripId": "REPLACE_WITH_TRIP_ID",
+    "tripInquiryId": "REPLACE_WITH_TRIP_INQUIRY_ID",
+    "inquiryId": "REPLACE_WITH_TRIP_INQUIRY_ID",
+    "messageId": "REPLACE_WITH_MESSAGE_ID"
+  }
+}

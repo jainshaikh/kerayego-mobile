@@ -3,7 +3,8 @@ import { AppCard, AppText, DetailRow } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { TripManifest } from '../../../api/trips.api';
 import type { TripDetail } from '../../../types/api.types';
-import { formatDate, formatPrice } from '../../../utils/format';
+import { formatPrice } from '../../../utils/format';
+import { formatTripDateTime, tripTimeZoneSuffix } from '../../../utils/tripDateTime';
 import type { CockpitRider } from './stopProgress';
 import { tripVehicle } from '../tripVehicle';
 
@@ -32,7 +33,7 @@ export function DetailsTab({ trip, manifest, riders }: DetailsTabProps) {
   // TripDetail carries no "actual start" timestamp (only the scheduled
   // departureAt) — the trip's scheduled departure is the closest real,
   // non-fabricated stand-in for it.
-  const startedLabel = formatDate(trip.departureAt);
+  const startedLabel = `${formatTripDateTime(trip.departureAt, { dateStyle: 'medium', timeStyle: 'short' })}${tripTimeZoneSuffix()}`;
   // A return trip runs in a business's fleet car — see tripVehicle.
   const vehicle = tripVehicle(trip);
 

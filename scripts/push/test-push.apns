@@ -1,0 +1,18 @@
+{
+  "Simulator Target Bundle": "com.kerayego.app",
+  "aps": {
+    "alert": {
+      "title": "Seat request accepted",
+      "body": "Your seat request was accepted."
+    },
+    "sound": "default"
+  },
+  "body": {
+    "v": "2",
+    "type": "tripInquiry.accepted",
+    "recipientRole": "RIDER",
+    "tripId": "REPLACE_WITH_TRIP_ID",
+    "tripInquiryId": "REPLACE_WITH_TRIP_INQUIRY_ID",
+    "inquiryId": "REPLACE_WITH_TRIP_INQUIRY_ID"
+  }
+}

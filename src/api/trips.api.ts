@@ -43,8 +43,6 @@ export interface CreateTripPayload {
   notes?: string;
 }
 
-export type UpdateTripPayload = Partial<CreateTripPayload>;
-
 export interface TripRouteGroup {
   originCity: string;
   destinationCity: string;
@@ -196,11 +194,6 @@ export const tripsApi = {
 
   getMineOne: async (id: string) => {
     const res = await apiClient.get<ApiResponse<TripDetail>>(`/my/trips/${id}`);
-    return res.data.data;
-  },
-
-  update: async (id: string, data: UpdateTripPayload) => {
-    const res = await apiClient.patch<ApiResponse<TripDetail>>(`/my/trips/${id}`, data);
     return res.data.data;
   },
 

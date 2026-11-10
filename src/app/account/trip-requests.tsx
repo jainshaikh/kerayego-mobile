@@ -9,6 +9,7 @@ import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { useTheme } from '../../theme';
 import { tripInquiryStatusMeta } from '../../types/enums';
 import { titleCase } from '../../utils/format';
+import { formatTripDateTime, tripTimeZoneShortSuffix } from '../../utils/tripDateTime';
 
 export default function MyTripRequestsScreen() {
   const { spacing } = useTheme();
@@ -38,7 +39,8 @@ export default function MyTripRequestsScreen() {
                 {item.requestedSeats} seat{item.requestedSeats !== 1 ? 's' : ''} · {item.trip.postedBy.name}
               </AppText>
               <AppText muted variant="caption" style={{ marginTop: 2 }}>
-                {new Date(item.trip.departureAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                {formatTripDateTime(item.trip.departureAt, { dateStyle: 'medium', timeStyle: 'short' })}
+                {tripTimeZoneShortSuffix()}
               </AppText>
             </AppCard>
           </Pressable>

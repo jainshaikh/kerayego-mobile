@@ -4,7 +4,6 @@ import {
   type CreateTripPayload,
   type RecordTripEventPayload,
   type TripFilters,
-  type UpdateTripPayload,
 } from '../../api/trips.api';
 import { normalizeApiError } from '../../api/errors';
 import { RIDER_LOCATIONS_POLL_MS } from './driverCockpit/riderLocations';
@@ -62,17 +61,6 @@ export function useCreateTrip() {
   return useMutation({
     mutationFn: (data: CreateTripPayload) => tripsApi.create(data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myTrips'] }),
-  });
-}
-
-export function useUpdateTrip(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: UpdateTripPayload) => tripsApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myTrip', id] });
-      queryClient.invalidateQueries({ queryKey: ['myTrips'] });
-    },
   });
 }
 
