@@ -4,14 +4,17 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 
 import { useBookingRequest, useUpdateBookingStatus } from '../../../features/booking-requests/queries';
 import { RentalLiveDriverCard } from '../../../features/booking-requests/components/RentalLiveDriverCard';
-import { bookingStatusExplanation, upcomingRentalDriver } from '../../../features/booking-requests/bookingDisplay';
-import { DriverContactActions } from '../../../features/trip-inquiries/riderLiveTrip/DriverContactActions';
+import { RentalDriverCard } from '../../../features/booking-requests/components/RentalDriverCard';
+import { BookingRouteCard } from '../../../features/booking-requests/components/BookingRouteCard';
+import { bookingStatusExplanation, rentalDriverCard } from '../../../features/booking-requests/bookingDisplay';
+import { bookingTimeLabel, passengersLabel, tripTypeLabel } from '../../../features/booking-requests/bookingRoute';
 import { CustomerLocationSharingCard } from '../../../features/liveRide/components/CustomerLocationSharingCard';
 import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState, StatusBadge } from '../../../components/ui';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { bookingStatusDisplay, userBookingActions, BookingRequestStatus } from '../../../types/enums';
 import { formatDate, formatPrice } from '../../../utils/format';
+import { PRICE_TO_AGREE, isPriceToAgree, packageLabel } from '../../../utils/rentalDuration';
 import { normalizeApiError } from '../../../api/errors';
 import { useRatingPrompt } from '../../../features/reviews/useRatingPrompt';
 import { customerBookingPendingRating } from '../../../features/reviews/ratingPrompt';
@@ -46,7 +49,11 @@ export default function MyInquiryDetailScreen() {
 
   const availableActions = userBookingActions(booking.status);
   const statusExplanation = bookingStatusExplanation(booking.status);
-  const upcomingDriver = upcomingRentalDriver(booking);
+  const driverCard = rentalDriverCard(booking);
+  const priceToAgree = isPriceToAgree(booking.durationType);
+  const hasStops = (booking.stops?.length ?? 0) > 0;
+  const tripType = tripTypeLabel(booking.tripType);
+  const passengers = passengersLabel(booking.passengerCount);
 
   const handleCancel = async () => {
     setActionError(null);
@@ -86,27 +93,10 @@ export default function MyInquiryDetailScreen() {
           </AppCard>
         ) : null}
 
-        {/* The assigned driver before the rental starts. Call/WhatsApp only
-            once the backend sends their phone (the driver accepted the job). */}
-        {upcomingDriver ? (
-          <AppCard style={{ marginTop: spacing.lg }}>
-            <AppText muted variant="caption">
-              Your driver
-            </AppText>
-            <AppText variant="subtitle" numberOfLines={1}>
-              {upcomingDriver.name}
-            </AppText>
-            {upcomingDriver.phone ? (
-              <View style={{ marginTop: spacing.md }}>
-                <DriverContactActions callNumber={upcomingDriver.phone} whatsappNumber={upcomingDriver.phone} />
-              </View>
-            ) : (
-              <AppText muted variant="caption" style={{ marginTop: 2 }}>
-                You can call your driver once they confirm the job.
-              </AppText>
-            )}
-          </AppCard>
-        ) : null}
+        {/* The driver card (A86) once a driver is assigned. Call/WhatsApp only
+            while ACCEPTED and once the backend sends their phone (the driver
+            accepted the job, D14). */}
+        {driverCard ? <RentalDriverCard driver={driverCard} style={{ marginTop: spacing.lg }} /> : null}
 
         {/* The assigned driver live on a map, only while the rental runs. */}
         {booking.status === BookingRequestStatus.IN_PROGRESS ? <RentalLiveDriverCard bookingId={booking.id} /> : null}
@@ -116,11 +106,38 @@ export default function MyInquiryDetailScreen() {
         <CustomerLocationSharingCard target={{ kind: 'BOOKING', id: booking.id }} />
 
         <AppCard style={{ marginTop: spacing.lg }}>
-          <Row label="From" value={formatDate(booking.requestedFromDate)} />
-          <Row label="To" value={formatDate(booking.requestedToDate)} />
-          {booking.pickupLocation ? <Row label="Pickup" value={booking.pickupLocation} /> : null}
-          <Row label="Vehicle rate" value={`${formatPrice(booking.vehicle.pricePerDay)}/day`} />
+          <Row label="Package" value={packageLabel(booking.durationType, booking.durationQuantity)} />
+          {tripType ? <Row label="Trip" value={tripType} /> : null}
+          {passengers ? <Row label="Passengers" value={passengers} /> : null}
+          <Row label={priceToAgree ? 'Starts' : 'Pickup'} value={bookingTimeLabel(booking.requestedFromDate)} />
+          <Row label="Ends" value={bookingTimeLabel(booking.requestedToDate)} />
+          {/* An older request without stops: its free-text places. */}
+          {!hasStops && booking.pickupLocation ? <Row label="Pickup place" value={booking.pickupLocation} /> : null}
+          {!hasStops && booking.dropoffLocation ? <Row label="Drop-off place" value={booking.dropoffLocation} /> : null}
+          {priceToAgree ? (
+            <Row label="Price" value={PRICE_TO_AGREE} />
+          ) : booking.totalPrice ? (
+            <Row label="Total" value={formatPrice(booking.totalPrice)} />
+          ) : (
+            <Row label="Vehicle rate" value={`${formatPrice(booking.vehicle.pricePerDay)}/day`} />
+          )}
+          {priceToAgree ? (
+            <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
+              The business will call you to agree the price.
+            </AppText>
+          ) : null}
         </AppCard>
+
+        {/* Week / month: what the business needs to quote (A85). */}
+        {priceToAgree && (booking.driverHoursPerDay || booking.daysPerWeek || booking.kmPerMonth) ? (
+          <AppCard style={{ marginTop: spacing.lg }}>
+            {booking.driverHoursPerDay ? <Row label="Driver's hours per day" value={`${booking.driverHoursPerDay} h`} /> : null}
+            {booking.daysPerWeek ? <Row label="Days per week" value={String(booking.daysPerWeek)} /> : null}
+            {booking.kmPerMonth ? <Row label="Kilometres per month" value={`About ${booking.kmPerMonth.toLocaleString()} km`} /> : null}
+          </AppCard>
+        ) : null}
+
+        <BookingRouteCard booking={booking} style={{ marginTop: spacing.lg }} />
 
         {booking.message ? (
           <AppCard style={{ marginTop: spacing.lg }}>
@@ -180,11 +197,13 @@ export default function MyInquiryDetailScreen() {
 function Row({ label, value }: { label: string; value: string }) {
   const { spacing } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs }}>
       <AppText muted variant="caption">
         {label}
       </AppText>
-      <AppText variant="caption">{value}</AppText>
+      <AppText variant="caption" style={{ flexShrink: 1, textAlign: 'right' }}>
+        {value}
+      </AppText>
     </View>
   );
 }

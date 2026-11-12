@@ -15,6 +15,9 @@ export interface ListingFilters {
   yearMax?: number;
   sort?: 'price_asc' | 'price_desc' | 'newest' | 'popular';
   providerSlug?: string;
+  // The "Weekly & monthly" section (A84): only cars the business switched on
+  // for weekly & monthly rental. Absent = every car ("Hourly & daily").
+  weeklyMonthly?: boolean;
   page?: number;
   limit?: number;
   // Nearby search — independent of city, mutually exclusive with it in the UI.

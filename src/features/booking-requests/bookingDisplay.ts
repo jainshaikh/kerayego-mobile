@@ -29,15 +29,48 @@ export function bookingStatusExplanation(status: BookingRequestStatus): string |
   return null;
 }
 
+export interface RentalDriverCardInfo {
+  name: string;
+  avatarUrl: string | null;
+  // Shown as "Identity verified" / "Licence verified" — never "safe" (A86).
+  identityVerified: boolean;
+  licenceVerified: boolean;
+  rating: { average: number | null; count: number } | null;
+  rideCount: number;
+  // Call / WhatsApp: only while ACCEPTED and the backend sends the phone (D14:
+  // null until the driver accepts the job). While IN_PROGRESS the live driver
+  // card has the buttons; after the rental, nobody needs them.
+  contactPhone: string | null;
+  // ACCEPTED with no phone yet: "You can call your driver once they confirm the job."
+  waitingForConfirmation: boolean;
+}
+
+const DRIVER_CARD_STATUSES: readonly BookingRequestStatus[] = [
+  BookingRequestStatus.ACCEPTED,
+  BookingRequestStatus.IN_PROGRESS,
+  BookingRequestStatus.COMPLETED,
+];
+
 /**
- * The assigned driver the booking detail shows before the rental starts
- * (ACCEPTED). While IN_PROGRESS the live driver card shows them instead.
- * `phone` is null until the driver accepts the job (backend D14) — Call and
- * WhatsApp are hidden then.
+ * The driver card the booking detail shows once a driver is assigned (A86):
+ * photo, name, rating, rides and what KerayeGo checked — while the booking is
+ * ACCEPTED, IN_PROGRESS or COMPLETED. Null otherwise.
  */
-export function upcomingRentalDriver(
+export function rentalDriverCard(
   booking: Pick<BookingRequest, 'status' | 'assignedDriver'>,
-): { name: string; phone: string | null } | null {
-  if (booking.status !== BookingRequestStatus.ACCEPTED || !booking.assignedDriver) return null;
-  return { name: booking.assignedDriver.name, phone: booking.assignedDriver.phone || null };
+): RentalDriverCardInfo | null {
+  const driver = booking.assignedDriver;
+  if (!driver || !DRIVER_CARD_STATUSES.includes(booking.status)) return null;
+  const accepted = booking.status === BookingRequestStatus.ACCEPTED;
+  const phone = driver.phone || null;
+  return {
+    name: driver.name,
+    avatarUrl: driver.avatarUrl ?? null,
+    identityVerified: driver.identityVerified === true,
+    licenceVerified: driver.licenceVerified === true,
+    rating: driver.rating ?? null,
+    rideCount: driver.rideCount ?? 0,
+    contactPhone: accepted ? phone : null,
+    waitingForConfirmation: accepted && !phone,
+  };
 }

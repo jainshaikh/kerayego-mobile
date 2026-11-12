@@ -1,11 +1,22 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { useInfiniteListings } from '../../../features/listings/queries';
 import { useSavedVehicles } from '../../../features/saved-vehicles/queries';
 import { VehicleCard } from '../../../features/listings/components/VehicleCard';
 import { FilterSheet } from '../../../features/listings/components/FilterSheet';
-import { AppButton, AppInput, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
+import { InquiryFormSheet } from '../../../features/booking-requests/components/InquiryFormSheet';
+import {
+  AppButton,
+  AppInput,
+  AppRefreshControl,
+  AppScreen,
+  AppText,
+  ErrorState,
+  LoadingState,
+  TabBar,
+} from '../../../components/ui';
 import { EmptyState } from '../../../components/ui/States';
 import { NearMeControl } from '../../../components/maps/NearMeControl';
 import { useCurrentLocation } from '../../../hooks/useCurrentLocation';
@@ -15,12 +26,26 @@ import { useAuth } from '../../../auth/auth-context';
 import { useTheme } from '../../../theme';
 import { DEFAULT_NEARBY_RADIUS_KM } from '../../../constants/config';
 import type { ListingFilters } from '../../../api/listings.api';
+import type { VehicleCard as VehicleCardData } from '../../../types/api.types';
+
+type Section = 'hourlyDaily' | 'weeklyMonthly';
+
+// A84: hourly & daily rentals (every car, at its prices) and weekly & monthly
+// ones (cars the business switched on — "price to agree") are browsed apart.
+// A car can be in both.
+const SECTIONS = [
+  { key: 'hourlyDaily', label: 'Hourly & daily' },
+  { key: 'weeklyMonthly', label: 'Weekly & monthly' },
+];
 
 // The Vehicles tab IS the landing page — a directly browsable, filterable list,
 // not a separate hero/featured teaser screen.
 export default function VehiclesScreen() {
   const { colors, spacing } = useTheme();
   const { isAuthenticated } = useAuth();
+  const [section, setSection] = useState<Section>('hourlyDaily');
+  // The car whose weekly & monthly request is open ("Ask for a price").
+  const [askingFor, setAskingFor] = useState<VehicleCardData | null>(null);
   const [searchText, setSearchText] = useState('');
   // The TextInput below stays bound to searchText (instant, every keystroke)
   // — only this debounced value feeds the actual query, so typing a whole
@@ -39,9 +64,18 @@ export default function VehiclesScreen() {
       lat: location.coords?.lat,
       lng: location.coords?.lng,
       radiusKm: location.coords ? radiusKm : undefined,
+      weeklyMonthly: section === 'weeklyMonthly' ? true : undefined,
     }),
-    [filters, debouncedSearchText, location.coords, radiusKm],
+    [filters, debouncedSearchText, location.coords, radiusKm, section],
   );
+
+  const askForPrice = (vehicle: VehicleCardData) => {
+    if (!isAuthenticated) {
+      router.push({ pathname: '/login', params: { returnTo: `/vehicle/${vehicle.slug}` } });
+      return;
+    }
+    setAskingFor(vehicle);
+  };
   const query = useInfiniteListings(appliedFilters);
   const saved = useSavedVehicles();
   const refresh = usePullToRefresh(() => (favoritesOnly ? saved.refetch() : query.refetch()));
@@ -60,6 +94,9 @@ export default function VehiclesScreen() {
     <AppScreen edges={['top', 'left', 'right']}>
       <View style={{ padding: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
         <AppText variant="title">Vehicles</AppText>
+        {!favoritesOnly ? (
+          <TabBar tabs={SECTIONS} activeKey={section} onChange={(key) => setSection(key as Section)} />
+        ) : null}
         <AppInput
           placeholder="Search by title, make, or model"
           value={searchText}
@@ -145,7 +182,9 @@ export default function VehiclesScreen() {
           data={vehicles}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
-          renderItem={({ item }) => <VehicleCard vehicle={item} />}
+          renderItem={({ item }) => (
+            <VehicleCard vehicle={item} mode={section} onAskForPrice={() => askForPrice(item)} />
+          )}
           refreshControl={<AppRefreshControl {...refresh} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => {
@@ -153,10 +192,27 @@ export default function VehiclesScreen() {
           }}
           ListFooterComponent={query.isFetchingNextPage ? <ActivityIndicator style={{ marginVertical: spacing.md }} /> : null}
           ListEmptyComponent={
-            <EmptyState title="No vehicles found" description="Try adjusting your search or filters." />
+            section === 'weeklyMonthly' ? (
+              <EmptyState
+                title="No weekly or monthly cars here yet"
+                description="Businesses switch a car on for weekly & monthly rental. Try another search, or check back soon."
+              />
+            ) : (
+              <EmptyState title="No vehicles found" description="Try adjusting your search or filters." />
+            )
           }
         />
       )}
+
+      {askingFor ? (
+        <InquiryFormSheet
+          key={askingFor.id}
+          visible
+          onClose={() => setAskingFor(null)}
+          car={askingFor}
+          weeklyMonthly
+        />
+      ) : null}
 
       <FilterSheet
         visible={sheetVisible}

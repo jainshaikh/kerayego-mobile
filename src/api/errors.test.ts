@@ -113,3 +113,36 @@ describe('retryAfterSeconds', () => {
     );
   });
 });
+
+// Since 2026-11-11 a coded error can carry a details object of its own
+// (ROUTE_DOES_NOT_FIT's suggestion) — it must reach the screen, and must not
+// pass for a validation field list.
+describe('error details', () => {
+  it('keeps a coded error’s details object, without treating it as field errors', () => {
+    const details = {
+      suggestion: { durationType: 'HOURS_12', durationQuantity: 1 },
+      distanceKm: 330,
+      drivingMinutes: 330,
+      timeNeededMinutes: 430,
+    };
+    const message = 'This trip needs about 7 h 10 m (330 km). Choose 12 hours.';
+    const normalized = normalizeApiError(
+      httpErrorWithBody(400, { success: false, statusCode: 400, error: { code: 'ROUTE_DOES_NOT_FIT', message, details } }),
+    );
+    expect(normalized).toMatchObject({ kind: 'validation', code: 'ROUTE_DOES_NOT_FIT', message, details });
+    expect(normalized.fieldErrors).toBeUndefined();
+  });
+
+  it('keeps a validation field list as fieldErrors and joins its messages', () => {
+    const fields = [
+      { field: 'name', message: 'Name is required' },
+      { field: 'email', message: 'Enter a valid email' },
+    ];
+    const normalized = normalizeApiError(
+      httpErrorWithBody(400, { success: false, statusCode: 400, error: { code: 'BAD_REQUEST', message: 'x', details: fields } }),
+    );
+    expect(normalized.fieldErrors).toEqual(fields);
+    expect(normalized.message).toBe('Name is required\nEnter a valid email');
+    expect(normalized).not.toHaveProperty('details');
+  });
+});

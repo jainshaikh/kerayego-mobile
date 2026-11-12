@@ -53,6 +53,14 @@ export enum RentalDurationType {
   MONTH = 'MONTH',
 }
 
+// A rental request's trip type (A76, plan §3c). One way: the route ends at the
+// last drop-off. Round trip: the driver then brings everyone back to the
+// pickups. Week/month requests have none (null).
+export enum BookingTripType {
+  ONE_WAY = 'ONE_WAY',
+  ROUND_TRIP = 'ROUND_TRIP',
+}
+
 export enum DocumentStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',

@@ -9,6 +9,8 @@ import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { useTheme } from '../../theme';
 import { bookingStatusDisplay } from '../../types/enums';
 import { formatDate } from '../../utils/format';
+import { packageLabel } from '../../utils/rentalDuration';
+import { routeSummaryLine } from '../../features/booking-requests/bookingRoute';
 
 export default function MyInquiriesScreen() {
   const { spacing } = useTheme();
@@ -25,7 +27,10 @@ export default function MyInquiriesScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
         refreshControl={<AppRefreshControl {...refresh} />}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          // "12 hours · Hyderabad → Larkana · 330 km" (older requests: their pickup, if any).
+          const route = routeSummaryLine(item);
+          return (
           <Pressable onPress={() => router.push(`/account/inquiry/${item.id}`)}>
             <AppCard style={{ marginBottom: spacing.md }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -34,7 +39,11 @@ export default function MyInquiriesScreen() {
                 </AppText>
                 <StatusBadge label={bookingStatusDisplay(item.status).label} tone={bookingStatusDisplay(item.status).tone} />
               </View>
-              <AppText muted variant="caption" style={{ marginTop: spacing.xs }}>
+              <AppText variant="caption" style={{ marginTop: spacing.xs }} numberOfLines={1}>
+                {packageLabel(item.durationType, item.durationQuantity)}
+                {route ? ` · ${route}` : ''}
+              </AppText>
+              <AppText muted variant="caption" style={{ marginTop: 2 }}>
                 {formatDate(item.requestedFromDate)} – {formatDate(item.requestedToDate)}
               </AppText>
               <AppText muted variant="caption" style={{ marginTop: 2 }}>
@@ -42,7 +51,8 @@ export default function MyInquiriesScreen() {
               </AppText>
             </AppCard>
           </Pressable>
-        )}
+          );
+        }}
         ListEmptyComponent={<EmptyState title="No inquiries yet" description="Your booking inquiries will appear here." />}
       />
     </AppScreen>

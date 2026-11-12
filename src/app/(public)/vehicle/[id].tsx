@@ -7,14 +7,14 @@ import { useVehicleDetail } from '../../../features/listings/queries';
 import { SaveButton } from '../../../features/saved-vehicles/components/SaveButton';
 import { InquiryFormSheet } from '../../../features/booking-requests/components/InquiryFormSheet';
 import { VehicleGallery } from '../../../features/listings/components/VehicleGallery';
-import { RatingSummaryBadge } from '../../../components/reviews/RatingSummaryBadge';
+import { CarRatingLine } from '../../../features/listings/components/CarRatingLine';
 import { ReviewsList } from '../../../components/reviews/ReviewsList';
 import { AppButton, AppCard, AppRefreshControl, AppScreen, AppText, ErrorState, LoadingState } from '../../../components/ui';
 import { useAuth } from '../../../auth/auth-context';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { useTheme } from '../../../theme';
 import { formatPrice, titleCase } from '../../../utils/format';
-import { getAvailableDurations, getUnitPrice } from '../../../utils/rentalDuration';
+import { PRICE_TO_AGREE, packageOptions } from '../../../utils/rentalDuration';
 import { RentalDurationType } from '../../../types/enums';
 
 // Route param is named `id` to match the reference folder structure, but the
@@ -23,7 +23,9 @@ export default function VehicleDetailScreen() {
   const { id: slug } = useLocalSearchParams<{ id: string }>();
   const { colors, spacing } = useTheme();
   const { isAuthenticated } = useAuth();
-  const [inquiryVisible, setInquiryVisible] = useState(false);
+  // null = closed; otherwise which request the sheet opens on (A84: "Ask for a
+  // price" starts a weekly & monthly request).
+  const [requestMode, setRequestMode] = useState<'hourlyDaily' | 'weeklyMonthly' | null>(null);
 
   const { data: vehicle, isLoading, isError, refetch } = useVehicleDetail(slug);
   const queryClient = useQueryClient();
@@ -38,14 +40,17 @@ export default function VehicleDetailScreen() {
     return <ErrorState message="This listing may have been removed." onRetry={refetch} />;
   }
 
-  const otherDurations = getAvailableDurations(vehicle).filter((d) => d.type !== RentalDurationType.DAY);
+  // The hour packages under the day price (no week or month prices — A79).
+  const hourPackages = packageOptions(vehicle).filter(
+    (option) => option.price !== null && option.type !== RentalDurationType.DAY,
+  );
 
-  const handleInquire = () => {
+  const openRequest = (mode: 'hourlyDaily' | 'weeklyMonthly') => {
     if (!isAuthenticated) {
       router.push({ pathname: '/login', params: { returnTo: `/vehicle/${slug}` } });
       return;
     }
-    setInquiryVisible(true);
+    setRequestMode(mode);
   };
 
   return (
@@ -62,11 +67,14 @@ export default function VehicleDetailScreen() {
             <SaveButton vehicleId={vehicle.id} />
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs, gap: spacing.sm }}>
-            <AppText muted style={{ textTransform: 'capitalize' }}>
-              {titleCase(vehicle.make)} {titleCase(vehicle.model)} · {vehicle.year}
-            </AppText>
-            <RatingSummaryBadge subjectType="VEHICLE" subjectId={vehicle.id} size="sm" />
+          <AppText muted style={{ marginTop: spacing.xs, textTransform: 'capitalize' }}>
+            {titleCase(vehicle.make)} {titleCase(vehicle.model)} · {vehicle.year}
+          </AppText>
+
+          {/* "This exact car" (A87): the request is for this car, with its own
+              rating and rides across its plate. */}
+          <View style={{ marginTop: spacing.sm }}>
+            <CarRatingLine vehicleId={vehicle.id} carRating={vehicle.carRating} />
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: spacing.md }}>
@@ -76,9 +84,9 @@ export default function VehicleDetailScreen() {
             <AppText muted> / day</AppText>
           </View>
 
-          {otherDurations.length > 0 ? (
+          {hourPackages.length > 0 || vehicle.offersWeeklyMonthly ? (
             <View style={{ marginTop: spacing.sm }}>
-              {otherDurations.map((option) => (
+              {hourPackages.map((option) => (
                 <View
                   key={option.type}
                   style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}
@@ -87,10 +95,22 @@ export default function VehicleDetailScreen() {
                     {option.label}
                   </AppText>
                   <AppText muted variant="caption">
-                    {formatPrice(getUnitPrice(vehicle, option.type))}
+                    {formatPrice(option.price)}
                   </AppText>
                 </View>
               ))}
+              {vehicle.offersWeeklyMonthly ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                  <AppText muted variant="caption">
+                    Weekly & monthly · {PRICE_TO_AGREE}
+                  </AppText>
+                  <Pressable onPress={() => openRequest('weeklyMonthly')} accessibilityRole="button" hitSlop={8}>
+                    <AppText variant="caption" color={colors.primary}>
+                      Ask for a price
+                    </AppText>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -172,17 +192,20 @@ export default function VehicleDetailScreen() {
           />
         ) : null}
         <View style={{ flex: 1 }}>
-          <AppButton title="Send inquiry" onPress={handleInquire} />
+          <AppButton title="Request this car" onPress={() => openRequest('hourlyDaily')} />
         </View>
       </View>
 
-      <InquiryFormSheet
-        visible={inquiryVisible}
-        onClose={() => setInquiryVisible(false)}
-        vehicleId={vehicle.id}
-        vehicleTitle={vehicle.title}
-        vehiclePricing={vehicle}
-      />
+      {requestMode ? (
+        <InquiryFormSheet
+          // A fresh form for each way in (Request / Ask for a price).
+          key={requestMode}
+          visible
+          onClose={() => setRequestMode(null)}
+          car={vehicle}
+          weeklyMonthly={requestMode === 'weeklyMonthly'}
+        />
+      ) : null}
     </AppScreen>
   );
 }

@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { bookingRequestsApi, type CreateBookingRequestPayload, type UpdateBookingStatusPayload } from '../../api/booking-requests.api';
+import {
+  bookingRequestsApi,
+  type CreateBookingRequestPayload,
+  type EstimateBookingPayload,
+  type UpdateBookingStatusPayload,
+} from '../../api/booking-requests.api';
 
 export function useMyBookingRequests(page = 1, limit = 20) {
   return useQuery({
@@ -30,6 +35,24 @@ export function useCreateBookingRequest() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myInquiries'] });
     },
+  });
+}
+
+/**
+ * The request sheet's route estimate (POST /booking-requests/estimate, A77):
+ * asked once every stop has a place and again whenever a stop, the date, the
+ * trip type or the package changes — `input` is null until then
+ * (rentalRequest.estimateInputOf). The endpoint allows 20 a minute, so the
+ * sheet debounces `input`, nothing retries on its own (the panel has Try
+ * again), and an answer stays good for 5 minutes.
+ */
+export function useBookingEstimate(input: EstimateBookingPayload | null) {
+  return useQuery({
+    queryKey: ['bookingEstimate', input],
+    queryFn: () => bookingRequestsApi.estimate(input as EstimateBookingPayload),
+    enabled: input !== null,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

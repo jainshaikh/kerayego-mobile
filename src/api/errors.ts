@@ -21,6 +21,9 @@ export interface NormalizedApiError {
   // 'FORBIDDEN'. Absent when there was no response or no code in it.
   code?: string;
   fieldErrors?: { field?: string; message: string }[];
+  // A coded error's own details object (body.error.details when it isn't a
+  // field list), e.g. ROUTE_DOES_NOT_FIT's { suggestion, distanceKm, … }.
+  details?: Record<string, unknown>;
   // Seconds before the same request may be sent again, when a 429 says so:
   // body.error.retryAfterSeconds (e.g. POST /users/me/phone/send-code's
   // CODE_RESEND_TOO_SOON), else a top-level body.retryAfterSeconds, else the
@@ -99,14 +102,21 @@ export function normalizeApiError(error: unknown): NormalizedApiError {
     const backendMessage = body?.error?.message;
     let message = backendMessage || FRIENDLY_MESSAGES[kind] || FRIENDLY_MESSAGES.unknown!;
 
-    if (Array.isArray(body?.error?.details) && body.error.details.length > 0) {
-      const detailsList = body.error.details
+    const rawDetails = body?.error?.details;
+    const fieldErrors = Array.isArray(rawDetails) ? rawDetails : undefined;
+    if (fieldErrors && fieldErrors.length > 0) {
+      const detailsList = fieldErrors
         .map((d: unknown) => (typeof d === 'string' ? d : (d as { message?: string })?.message || JSON.stringify(d)))
         .filter(Boolean);
       if (detailsList.length > 0) {
         message = detailsList.join('\n');
       }
     }
+    // Since 2026-11-11 a coded error can carry its own details object.
+    const details =
+      rawDetails && typeof rawDetails === 'object' && !Array.isArray(rawDetails)
+        ? (rawDetails as Record<string, unknown>)
+        : undefined;
 
     const code = typeof body?.error?.code === 'string' ? body.error.code : undefined;
     const retryAfterSeconds = retryAfterOf(error);
@@ -117,7 +127,8 @@ export function normalizeApiError(error: unknown): NormalizedApiError {
       message,
       ...(code ? { code } : {}),
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
-      fieldErrors: body?.error?.details,
+      fieldErrors,
+      ...(details ? { details } : {}),
     };
   }
 

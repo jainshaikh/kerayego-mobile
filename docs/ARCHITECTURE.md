@@ -22,7 +22,7 @@ Socket.IO (the backend's `/ride` namespace). Its scope differs meaningfully from
   listing of `src/app` and `src/features` (there is no rental-listing schema in `src/schemas/` either).
 - **Much richer on carpool**: this is the only client (of the three in this workspace) with day-of trip
   execution UI, live GPS tracking, and in-app chat — features `kerayego-web` entirely lacks.
-- **Unit tests with Jest**: `jest-expo` preset, 55 `*.test.ts(x)` files under `src/` (none under
+- **Unit tests with Jest**: `jest-expo` preset, 58 `*.test.ts(x)` files under `src/` (none under
   `src/app/`), run with `npm test` (§18).
 - **Background execution for location only**: two `expo-location` tasks, never both at once for one
   person (§12) — while a carpool trip the user is driving is `IN_PROGRESS`, the driver's location keeps
@@ -187,8 +187,8 @@ Nested layouts:
 - `(public)/(tabs)/_layout.tsx` — the **real** bottom tab bar: Expo Router's own `Tabs` component, 4
   screens (`index` → "Vehicles", `trips` → "Carpool", `providers` → "Providers", `profile` → "Profile")
   each with an outline/filled Ionicons `tabBarIcon`. This is unrelated to `components/ui/TabBar.tsx`
-  (see §8) — the custom component is used only inside the rider's live view as an in-screen sub-view
-  switcher.
+  (see §8) — the custom component is an in-screen sub-view switcher (the rider's live view and the
+  Vehicles tab's two sections).
 - `account/_layout.tsx` — where auth/role/verification guarding actually happens (§6).
 
 ## 5. Screens (Full Route Inventory)
@@ -200,7 +200,7 @@ navigation call using un-prefixed paths.
 | Resolved path | File | Notes |
 |---|---|---|
 | `/login`, `/register`, `/verify-email` | `(auth)/*.tsx` | See §6 |
-| `/` (Vehicles tab) | `(public)/(tabs)/index.tsx` | Infinite single-column vehicle list, search, filters, near-me button (`NearMeControl`, no map), favorites toggle (auth-gated) |
+| `/` (Vehicles tab) | `(public)/(tabs)/index.tsx` | "Hourly & daily" / "Weekly & monthly" sections (A84), infinite single-column vehicle list, search, filters, near-me button (`NearMeControl`, no map), favorites toggle (auth-gated) |
 | `/trips` (Carpool tab) | `(public)/(tabs)/trips.tsx` | Public carpool trip search, popular-routes rail (`RouteGroupCard`), "Post a trip" (guests → login with `returnTo`) |
 | `/providers` | `(public)/(tabs)/providers.tsx` | Provider directory |
 | `/profile` | `(public)/(tabs)/profile.tsx` | Logged-out welcome/login CTA, or authenticated stats + menu |
@@ -490,10 +490,11 @@ no inputs of its own; rating happens in `RateSheet`).
   `tripStatusMeta`, `userVehicleStatusMeta`, `tripInquiryStatusMeta`, `providerStatusMeta`,
   `documentStatusMeta` (every status enum except `UserStatus`, which no screen badges).
 - **`TabBar`** — a custom in-screen segmented pill switcher (tap-only by explicit design, no swipe, "to
-  avoid accidental tab changes on map screens"), used only by the rider's live view
-  (`features/trip-inquiries/riderLiveTrip/RiderLiveView.tsx`, Stops/Driver/Summary — §10.1). The
-  driver's live cockpit has no tabs: its Route/Riders/Details views are `AppSheet`s opened from
-  `LegPanel`. **Not** the app's bottom tab bar (see §4/§5).
+  avoid accidental tab changes on map screens"), used by the rider's live view
+  (`features/trip-inquiries/riderLiveTrip/RiderLiveView.tsx`, Stops/Driver/Summary — §10.1) and the
+  Vehicles tab ("Hourly & daily" / "Weekly & monthly", §9). The driver's live cockpit has no tabs: its
+  Route/Riders/Details views are `AppSheet`s opened from `LegPanel`. **Not** the app's bottom tab bar
+  (see §4/§5).
 - **`States.tsx`** — `LoadingState`/`EmptyState`/`ErrorState`, all custom, composing `AppText`/`AppButton`.
 - **`Row`/`DetailRow`** — plain label/value line components (caption-sized and body-sized respectively);
   shared across the carpool trip/vehicle detail screens and the driver/rider day-of-execution views.
@@ -514,14 +515,60 @@ this code path** (confirmed by grep; Socket.IO is confined to `features/liveRide
 
 - Public browse (`(tabs)/index.tsx`) and provider directory (`(tabs)/providers.tsx`), both infinite-
   scroll, with URL-independent local filter state (no query-param persistence like web's browse page).
+  **Two browse sections (A84, 2026-11-12)**: the Vehicles tab's `TabBar` switches between **Hourly &
+  daily** (every car, at its day price) and **Weekly & monthly** (`GET /listings?weeklyMonthly=true` — cars
+  the business switched on; each `VehicleCard` shows "Price to agree" and an **Ask for a price** button
+  that opens the request sheet on Week, guests → `/login?returnTo=/vehicle/<slug>`). A car can be in
+  both. The switch hides while "My favorites" is on. The filters (city, make, price, seats…) apply to
+  both sections; the price filter and sort are the day price's.
 - Vehicle/provider detail screens are keyed by **slug** despite the `[id]` route-param name.
-- **Booking-request ("inquiry")**: `InquiryFormSheet` computes an estimated total/return-date
-  client-side purely for display (`utils/rentalDuration.ts`, explicitly commented as preview-only — the
-  backend recomputes authoritatively); `requestedToDate` is never sent by the client. A second request for
-  a car the customer already has a `PENDING`/`CONTACTED`/`ACCEPTED`/`IN_PROGRESS` request on gets **409**
-  "You already have an active inquiry for this vehicle": the sheet shows that message plus a **View my
-  inquiries** button (`createBookingError`, `features/booking-requests/bookingDisplay.ts`). After
-  `COMPLETED`/`CANCELLED`/`REJECTED`/`NOT_STARTED` the same car can be requested again.
+- **The rental request ("Request this car", `InquiryFormSheet`, 2026-11-12, plan §3c, A74–A85)** — an
+  `AppSheet` for one car (`RentalRequestCar`: id, title, seats, the listing's prices and
+  `offersWeeklyMonthly`), opened from the car page ("Request this car", or "Ask for a price" → Week) or a
+  weekly & monthly card. Zod `rentalRequestSchema(seats)` (`schemas/booking.schema.ts`); pure logic in
+  `utils/rentalDuration.ts` (packages) and `features/booking-requests/rentalRequest.ts` (payload,
+  estimate input, errors, the estimate panel's words) — both unit-tested. In order:
+  - **Package** chips (`packageOptions`): 6 hours and 12 hours when the car prices them, **Days** (always),
+    then **Week** and **Month** ("Price to agree") only when `offersWeeklyMonthly`. The count only where it
+    applies — a `Stepper` "Number of days" 1–6 ("For 7 days or more, choose Week or Month"), weeks 1–4,
+    months 1–12; hour packages take none (A74). The word "quantity" never shows.
+  - **Pickup date & time** (week/month: "Start date & time"), in the future.
+  - **Trip** — One way / Round trip (A76), priced packages only, no default (the choice changes the fit).
+  - **Pickup points** and **drop-off points** — the carpool form's `TripStopsSection` with
+    `variant="rental"`: at least one of each, at most 10 in all (each card's limit is what the other
+    leaves), every place **picked** from the suggestions or the map (A75): typing in a place clears the
+    coordinates a pick gave it, and the schema refuses a stop without them ("Pick this place from the
+    suggestions or on the map"). No per-stop note field yet (the API takes one).
+  - **Passengers** `Stepper`, 1 to the car's seats (A83).
+  - **Week/month** (A85): the driver's hours per day (1–24, default 10), days per week (1–7, default 6) and
+    kilometres per month (optional). No route, no estimate, no trip type.
+  - **Route estimate** (priced packages, A77 — `EstimatePanel`, `useBookingEstimate` →
+    `POST /booking-requests/estimate`): asked once the time, trip type and every place are set
+    (`estimateInputOf`), again whenever any of them or the package changes — the input is debounced
+    700 ms (the endpoint allows 20 a minute), no automatic retries, answers cached 5 min. It shows
+    "330 km · 5 h 20 min driving" (round trip: ", there and back"), "About 7 h 10 min with stops and
+    breaks", then either "✓ Fits 12 hours — about 4 h 50 min to spare" + "Ends around 6:30 PM" (+ round trip
+    "About 3 h at Larkana"), or "This trip needs about 7 h 10 min (330 km). Choose 12 hours." with a
+    **Choose 12 hours** button that switches the package (no package fits: "…It's too long for this car's
+    packages."). **Send is disabled while the picked package doesn't fit.** `ROUTE_UNAVAILABLE` (503) or a
+    network error shows **Try again**; `ROUTE_NOT_FOUND` the server's message.
+  - **Price**: priced → "Total for 12 hours PKR …" (`packageTotal`, a preview — the server works it out);
+    week/month → "Price to agree … The business will call you to agree the price." + the end date.
+  - **Message** (optional), then **Send request** (week/month: **Ask for a price**).
+  - **Sending** (`createPayloadOf`, the new request shape — never the old free-text place fields): the
+    stops (pickups, then drop-offs), `passengerCount`, `tripType` (priced) or `driverHoursPerDay`/
+    `daysPerWeek`/`kmPerMonth` (week/month), `durationQuantity` only where a count applies. Before it,
+    `withEndStopCities` (`stopCities.ts`) reverse-geocodes the **first pickup and the last drop-off**
+    (`GET /geo/reverse`, best-effort) to send their `city` — the backend copies those into
+    `pickupCity`/`dropoffCity`, which the return-trip rule (A48) reads; a picked place has coordinates
+    but no city.
+  - **Failures** (`rentalRequestFailure`): `ROUTE_DOES_NOT_FIT` → the server's message and a **Choose …**
+    button from `error.details.suggestion`; `START_TIME_PAST` → under the date field; the 409 "You
+    already have an active inquiry for this vehicle" → that message plus **View my inquiries** (any
+    `conflict`; after `COMPLETED`/`CANCELLED`/`REJECTED`/`NOT_STARTED` the car can be requested again);
+    `IDENTITY_ON_HOLD` → the hold banner; anything else → the server's message. `normalizeApiError` keeps
+    a coded error's `error.details` object as `details` (a validation field list stays `fieldErrors`).
+  - On success: `['myInquiries']` refreshes and the app goes to `/account/inquiries`.
 - **Saved vehicles**: the per-vehicle heart-icon `SaveButton` is **always rendered** regardless of auth
   state (redirects to `/login` on tap if unauthenticated); the Vehicles tab's separate "My favorites"
   view-toggle is a **different control** that is only rendered at all when `isAuthenticated` is true —
@@ -541,10 +588,16 @@ this code path** (confirmed by grep; Socket.IO is confined to `features/liveRide
   `POST /reviews` per fully rated ride (`buildReviewPayloads`); a 409 counts as saved; after saving it
   shows a short thank-you and closes, and `useCreateReview` refreshes the eligible list.
 - **Car rating line** (`components/reviews/RatingSummaryBadge` → `RatingBadge`): a car's summary
-  (`GET /reviews/summary`, `VEHICLE`/`USER_VEHICLE`, on the vehicle and trip detail screens) covers the
-  car's whole **plate** (every listing, any owner; backend plan A17). When its `rideCount` is above 0 the
-  line adds "· N rides on KerayeGo" in the same muted style (`rideCountLabel`,
-  `features/reviews/plateHistory.ts`); `USER` summaries never show it.
+  (`GET /reviews/summary`, `VEHICLE`/`USER_VEHICLE`) covers the car's whole **plate** (every listing, any
+  owner; backend plan A17). When its `rideCount` is above 0 the line adds "· N rides on KerayeGo" in the
+  same muted style (`rideCountLabel`, `features/reviews/plateHistory.ts`); `USER` summaries never show it.
+  **"This exact car" (A87, 2026-11-12)**: rental cars use `features/listings/components/CarRatingLine` —
+  "This exact car · ★ 4.6 (12) · 30 rides on KerayeGo" from the listing's own `carRating`
+  (`{ averageRating, reviewCount, rideCount }`, on `GET /listings`, `/listings/:slug` and saved vehicles),
+  on every `VehicleCard` and the car page. An older backend sends no `carRating`: the car page then asks
+  `GET /reviews/summary` itself; a card just says "This exact car" (one request per card would be too
+  many). "Plate checked by KerayeGo" isn't shown — the listing doesn't say yet. The carpool trip detail
+  still uses `RatingSummaryBadge`.
 - **End-of-ride rating prompt** (`features/reviews/useRatingPrompt.ts` + pure helpers in
   `features/reviews/ratingPrompt.ts`): the carpool driver's ride summary, the rider's post-ride view and
   the rental booking detail each open `RateSheet` on their own once the ride is over **on the server** and
@@ -564,24 +617,46 @@ this code path** (confirmed by grep; Socket.IO is confined to `features/liveRide
   `GET` endpoints (`/listings`, `/listings/:slug`, `/listings/meta/makes`,
   `/listings/meta/cities`). The similarly-named `account/my-vehicles/*` registers a **personal carpool
   vehicle** (`userVehicleFormSchema`), a different domain entirely.
-- **Vehicle detail** (`vehicle/[id].tsx`): gallery (`VehicleGallery`, paged with dots), every price tier
-  the listing has, WhatsApp to the showroom number (`wa.me`), and **Send inquiry** — a guest tapping it
-  goes straight to `/login?returnTo=…` (the `AuthRequiredSheet` prompt is used only on the trip detail).
-  The 409 handling covers **any** `conflict` answer (server message, else the fixed duplicate text).
+- **Vehicle detail** (`vehicle/[id].tsx`): gallery (`VehicleGallery`, paged with dots), "This exact car"
+  with the car's rating and rides (`CarRatingLine`), the day price and the 6/12-hour prices the car has —
+  **no week or month prices** (A79; the backend stopped sending them 2026-11-11) — and, on a car switched
+  on for it, "Weekly & monthly · Price to agree" with an **Ask for a price** link (the request sheet on
+  Week). WhatsApp to the showroom number (`wa.me`), and **Request this car** — a guest tapping either goes
+  straight to `/login?returnTo=…` (the `AuthRequiredSheet` prompt is used only on the trip detail). The
+  sheet is mounted fresh for each way in (`key`).
+- **My inquiries** (`account/inquiries.tsx`): each card says the package and the route in one line —
+  "12 hours · Hyderabad → Larkana · 330 km" (`packageLabel`, `routeSummaryLine`; an older request: its
+  free-text pickup) — then the dates and the business.
 - **Limits**: saved vehicles and the favorites view load at most 100 (no infinite scroll there); "My
   inquiries" loads page 1, limit 50, with no further paging; "Cancel inquiry" has no confirmation.
 - `ReviewSubjectType` still has a `PROVIDER` member (mirroring the backend), but the app never sends it
   (A18). (Removed 2026-11-09 as unused: the `ResultsMap` component, `useFeaturedVehicles`/`useListings`
   and `listingsApi.getFeatured`.)
-- **Booking detail** (`account/inquiry/[id].tsx`): while the booking is `IN_PROGRESS`,
+- **Booking detail** (`account/inquiry/[id].tsx`):
+  - **The request** (2026-11-12): package ("12 hours", "3 days", "1 week — price to agree"; an old row
+    "6 hours × 2"), trip (One way / Round trip), passengers, pickup (week/month: starts) and end with their
+    times, then the total — or "Price to agree" with "The business will call you to agree the price." An
+    older request without stops shows its free-text pickup/drop-off places and the car's day rate. A week
+    or month request adds the driver's hours per day, days per week and kilometres per month (A85).
+  - **Route** (`BookingRouteCard`, A78): every pickup and drop-off in route order with when the car should
+    get there (`expectedAt`; the time alone on the pickup's day, else the date too), the drive from the
+    stop before, then the route's km and driving time (round trip: there and back, and the drive back on
+    its own), "About … with stops and breaks", and "Times are estimates". Week/month stops have places but
+    no times. Wording shared with KerayeGo Partner (`features/booking-requests/bookingRoute.ts` mirrors
+    its `bookingRoute.ts`: "330 km", "7 h 10 min").
+  - **Driver card** (`RentalDriverCard`, A86 — `rentalDriverCard` decides): once a driver is assigned and
+    the booking is `ACCEPTED`, `IN_PROGRESS` or `COMPLETED` — the driver's photo (else initials), name,
+    rating and rides ("★ 4.8 (23) · 41 rides on KerayeGo", `assignedDriver.rating`/`rideCount`), and
+    "✓ Identity verified" / "✓ Licence verified" badges — each only when true, never "safe". Call/WhatsApp
+    only while `ACCEPTED` with the phone sent; during the rental the live card has them.
+  - While the booking is `IN_PROGRESS`,
   `RentalLiveDriverCard` shows the assigned driver on a `LiveTripMap` (no stops; framed on and following
   the driver) with their recent path as the line, the driver's name, **Call**/**WhatsApp** buttons
   (`DriverContactActions`) and "Location updated x ago" — `GET /booking-requests/:id/live-driver` and
   `/live-route`, each polled every 10 s while the screen is open in the foreground (no socket for rentals).
-  While `ACCEPTED` with a driver assigned, a **Your driver** card shows `assignedDriver.name` instead
-  (`upcomingRentalDriver`). The backend sends the driver's phone to the customer (`assignedDriver.phone`,
+  The backend sends the driver's phone to the customer (`assignedDriver.phone`,
   live-driver `driver.phone`) only while `IN_PROGRESS`, or `ACCEPTED` with the driver's job accepted (D14);
-  otherwise it's `null` and both cards hide Call/WhatsApp (the `ACCEPTED` card says "You can call your
+  otherwise it's `null` and both cards hide Call/WhatsApp (the driver card says "You can call your
   driver once they confirm the job"). A `NOT_STARTED` booking (backend cron: the booked period ended
   without the job starting; terminal, grey "Not started" badge, never rateable) gets a short explanation
   card. The screen also shows the customer's own
@@ -1184,7 +1259,7 @@ There is no `app.json` at the repo root (only an unrelated one inside `node_modu
 ## 18. Testing
 
 **Unit tests run with Jest** (`npm test`). `jest.config.js` uses the `jest-expo` preset, crawls only
-`src/`, and matches `**/*.test.ts?(x)`; `jest.setup.ts` holds shared mocks. 55 test files exist, covering
+`src/`, and matches `**/*.test.ts?(x)`; `jest.setup.ts` holds shared mocks. 58 test files exist, covering
 pure logic and modules such as the API client and errors, storage, enums, the phone sign-in flow and auth schemas, number/date utilities and the
 driver's and customer's background location rules and senders. Keep test files out of `src/app/`, where Expo Router would treat
 them as routes.
@@ -1198,8 +1273,8 @@ them as routes.
   app against a live backend.
 - **Known hang (2026-10-27)**: `src/features/trips/offlineSync.test.ts` never finishes (killed after
   60 s, no output), so a full `npm test` never ends. Every other file passes
-  (`npx jest --testPathIgnorePatterns offlineSync`: 54 files, 980 tests on 2026-11-09, when the hang was
-  re-confirmed — still no output after 120 s). Cause not
+  (`npx jest --testPathIgnorePatterns offlineSync`: 57 files, 1,023 tests on 2026-11-12; the hang was
+  re-confirmed on 2026-11-09 — still no output after 120 s). Cause not
   investigated yet.
 
 ## 19. Consolidated Known Issues, Discrepancies & Unknowns
@@ -1222,6 +1297,16 @@ them as routes.
     `useMyTripInquiryCounts`/`useTripInquiryInboxCounts` + their two counts calls.
 - **Remaining unused export**: `unsubscribeInquiryNotifications` (socket.ts), the counterpart of the
   still-used `subscribeInquiryNotifications`. `tripPosterActions` lists `'edit'` though nothing renders it.
+- **Rental request redesign (2026-11-12) — open points**:
+  - The app sends only the **new request shape**; the backend still accepts the old one until it's told
+    the app shipped (plan §3c order step 4 — tell the backend chat once this build is out). Installed
+    older builds still send the old shape, and since 2026-11-11 the backend refuses some of what they
+    send (6 h × 2, 7+ days, a past time).
+  - Not built in the sheet: a **note per stop** (the API takes `note`; the request's message is the only
+    free text); "Plate checked by KerayeGo" (A87 — the listing doesn't say); a map of the stops on the
+    booking detail.
+  - Tried only in unit tests, type-check and an Android bundle build — not yet on a device against a
+    backend that has the 2026-11-11 changes (they weren't deployed on 2026-11-12).
 - **`userBookingActions()` and similar mobile-only action-gating helpers hardcode narrower results**
   than the mirrored backend transition tables (`BOOKING_TRANSITIONS`, etc.) technically allow — e.g. a
   `USER` can in principle move a `PENDING` booking to `CONTACTED`/`REJECTED` per the table, but the

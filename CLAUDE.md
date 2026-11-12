@@ -31,7 +31,7 @@ avoidance — the app is edge-to-edge, so Android's `adjustResize` doesn't help;
 `expo-secure-store` · `expo-image-picker` (the only picker) · `expo-image` (every remote photo) ·
 `expo-crypto` · `react-native-reanimated`/`react-native-worklets`, `expo-glass-effect`, `expo-symbols`,
 `@expo/ui` (dependencies with no direct import anywhere in `src/`). **Unit tests:
-Jest** with the `jest-expo` preset (`npm test`): 55 `*.test.ts(x)` files under `src/`, never under
+Jest** with the `jest-expo` preset (`npm test`): 58 `*.test.ts(x)` files under `src/`, never under
 `src/app/` (Expo Router would treat them as routes). No component-rendering or end-to-end tests.
 **The full `npm test` hangs**: `src/features/trips/offlineSync.test.ts` never finishes; run the other files by name.
 
@@ -94,8 +94,9 @@ Routes (Expo Router; parenthesized segments are route groups, stripped from the 
   profile, delete-account, my-trips/_, my-vehicles/_, trip-requests, trip-request/[id].
 
 **Naming trap**: `components/ui/TabBar.tsx` is _not_ the app's tab bar — it's a small custom in-screen
-segmented control used only by the rider's live view (`RiderLiveView`, Stops/Driver/Summary). The
-driver's cockpit has no tabs (its Route/Riders/Details views are sheets). The real bottom tab navigator
+segmented control, used by the rider's live view (`RiderLiveView`, Stops/Driver/Summary) and the
+Vehicles tab ("Hourly & daily" / "Weekly & monthly"). The driver's cockpit has no tabs (its
+Route/Riders/Details views are sheets). The real bottom tab navigator
 is `(public)/(tabs)/_layout.tsx`'s `Tabs` component.
 
 ## Authentication & session
@@ -192,7 +193,7 @@ the only exceptions are 4 mutations that return `void` (`deviceTokensApi.registe
 delete call. `normalizeApiError`'s friendly-message table has no dedicated entry for
 `validation`/`conflict` kinds — those fall back to a generic message absent a backend-supplied one.
 
-`types/enums.ts` mirrors 16 backend Prisma enums plus mobile-only derived helpers (`userBookingActions`,
+`types/enums.ts` mirrors 17 backend Prisma enums plus mobile-only derived helpers (`userBookingActions`,
 `tripPosterActions`, `tripInquiryRiderActions`/`PosterActions`) that gate which UI actions appear per
 status — some of these **hardcode a narrower result than the mirrored transition tables actually allow**
 (e.g. `userBookingActions` only ever offers `CANCELLED`, even though `BOOKING_TRANSITIONS`'s own `PENDING`
@@ -203,11 +204,32 @@ row lists `USER` as allowed to reach `CONTACTED`/`REJECTED` too). Every status e
 
 ## Rental flow (consumer-only)
 
-Browse listings/providers (infinite scroll), vehicle/provider detail, submit a booking-request
-("Send inquiry"), save/unsave a vehicle, leave a review. **There is no vehicle-listing-creation or
+Browse listings/providers (infinite scroll), vehicle/provider detail, send a rental request, save/unsave
+a vehicle, leave a review. **There is no vehicle-listing-creation or
 showroom-management screen anywhere in this app**, and no rental-listing schema. The visually similar "My vehicles" under
 `account/my-vehicles/*` is a **different domain** — it registers a user's personal carpool vehicle
 (`userVehicleFormSchema`), not a rental listing.
+
+**Rental request redesign (built 2026-11-12, plan §3c/§3d, A74–A87; backend contract in root
+`docs/API_CONTRACTS.md` "Rental booking redesign")** — details in `docs/ARCHITECTURE.md` §9:
+- **Browse** has two sections (A84): "Hourly & daily" and "Weekly & monthly" (`weeklyMonthly=true`,
+  "Price to agree" + "Ask for a price"). **No week or month prices anywhere** (A79). Cards and the car
+  page say **"This exact car"** with the car's own `carRating` (A87, `CarRatingLine`).
+- **The request sheet** (`InquiryFormSheet`, "Request this car"): package (6 h / 12 h / Days, plus Week
+  and Month "price to agree" on cars switched on for it), the count only where it applies (days 1–6,
+  weeks 1–4, months 1–12 — never "quantity"), pickup time, One way / Round trip, pickup and drop-off
+  points **picked** by search or map (the carpool `TripStopsSection`, `variant="rental"`, ≤10 in all),
+  passengers (≤ seats), week/month hours per day / days per week / km per month, and the **route
+  estimate** (`POST /booking-requests/estimate`, debounced) — Send is disabled while the package doesn't
+  fit, with a "Choose 12 hours" button. It sends **only the new request shape** (`stops`, `tripType`,
+  `passengerCount`; the first pickup's and last drop-off's `city` looked up on send) and handles
+  `ROUTE_DOES_NOT_FIT` (suggestion from `error.details`), `START_TIME_PAST`, `ROUTE_UNAVAILABLE`.
+  Package rules: `utils/rentalDuration.ts`; payload/estimate/errors: `features/booking-requests/rentalRequest.ts`;
+  route wording (same as KerayeGo Partner): `bookingRoute.ts`.
+- **Booking detail**: package, trip type, passengers, start/end times, total or "Price to agree", the
+  Route (stops with expected times, km, driving time), and the **driver card** (A86 — photo, rating,
+  rides, "Identity verified" / "Licence verified", never "safe").
+- Once this build ships, tell the backend chat so it can refuse the old request shape (§3c step 4).
 
 ## Carpool flow & live ride (the standout feature vs. web)
 

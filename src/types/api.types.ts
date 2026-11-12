@@ -1,5 +1,6 @@
 import type {
   BookingRequestStatus,
+  BookingTripType,
   DocumentStatus,
   FuelType,
   Market,
@@ -33,7 +34,9 @@ export interface ApiErrorBody {
   error: {
     code: string;
     message: string;
-    details?: { field?: string; message: string }[];
+    // A validation error's field list, or — on a coded error — an object of
+    // its own (e.g. ROUTE_DOES_NOT_FIT's { suggestion, distanceKm, … }).
+    details?: { field?: string; message: string }[] | Record<string, unknown>;
   };
   timestamp: string;
   path: string;
@@ -374,7 +377,17 @@ export interface ProviderVehicle {
   updatedAt: string;
 }
 
-// Public listing card (GET /listings, /listings/featured)
+// "This exact car" (A87): the car's own figures across its plate (every
+// listing of it, any owner) — the same as GET /reviews/summary for VEHICLE.
+export interface CarRating {
+  averageRating: number | null;
+  reviewCount: number;
+  rideCount: number;
+}
+
+// Public listing card (GET /listings, saved vehicles). No week or month
+// prices since 2026-11-11 (A79): weeks and months are "price to agree" on
+// cars with offersWeeklyMonthly (A84).
 export interface VehicleCard {
   id: string;
   slug: string;
@@ -382,8 +395,12 @@ export interface VehicleCard {
   make: string;
   model: string;
   year: number;
+  pricePer6Hours?: string | null;
+  pricePer12Hours?: string | null;
   pricePerDay: string;
-  pricePerWeek: string | null;
+  // Optional: absent from an older backend.
+  offersWeeklyMonthly?: boolean;
+  carRating?: CarRating;
   transmission: Transmission;
   fuelType: FuelType;
   seatingCapacity: number;
@@ -412,8 +429,9 @@ export interface VehicleDetail {
   pricePer6Hours: string | null;
   pricePer12Hours: string | null;
   pricePerDay: string;
-  pricePerWeek: string | null;
-  pricePerMonth: string | null;
+  // No week or month prices (A79) — see VehicleCard. Optional for an older backend.
+  offersWeeklyMonthly?: boolean;
+  carRating?: CarRating;
   transmission: Transmission;
   fuelType: FuelType;
   seatingCapacity: number;
@@ -454,6 +472,25 @@ export interface BookingStatusHistoryEntry {
   createdAt: string;
 }
 
+// One pickup or drop-off of a rental request (plan §3c, A75), in route order
+// (every pickup, then every drop-off). `expectedAt` = pickup time + driving +
+// 15 min per earlier stop + breaks (A78); null after a missing leg, and on
+// week/month requests (no route).
+export interface BookingStop {
+  id: string;
+  type: 'PICKUP' | 'DROPOFF';
+  sortOrder: number;
+  label: string;
+  lat: number;
+  lng: number;
+  city: string | null;
+  note: string | null;
+  // The drive from the stop before — null on the first stop.
+  legDistanceKm: number | null;
+  legDurationMinutes: number | null;
+  expectedAt: string | null;
+}
+
 export interface BookingRequest {
   id: string;
   status: BookingRequestStatus;
@@ -461,8 +498,29 @@ export interface BookingRequest {
   requestedToDate: string; // server-derived from durationType/durationQuantity
   durationType: RentalDurationType;
   durationQuantity: number;
-  totalPrice: string; // server-derived: unit price for durationType * durationQuantity
+  // Server-derived: the car's price × the count. Null for a week or month
+  // request — "price to agree" (A79).
+  totalPrice: string | null;
+  // Free text on old requests; on new ones the server fills it from the first
+  // pickup (and dropoffLocation from the last drop-off).
   pickupLocation: string | null;
+  dropoffLocation?: string | null;
+  // ── Rental booking redesign (2026-11-11, plan §3c) — null / [] on older
+  // requests, absent from an older backend.
+  tripType?: BookingTripType | null;
+  passengerCount?: number | null;
+  // The customer's route — a round trip including the way back.
+  routeDistanceKm?: number | null;
+  routeDurationMinutes?: number | null;
+  wayBackDistanceKm?: number | null;
+  wayBackDurationMinutes?: number | null;
+  // Driving + 15 min per stop after the first + 30 min per full 4 h (A80).
+  timeNeededMinutes?: number | null;
+  // Week/month requests (A85).
+  driverHoursPerDay?: number | null;
+  daysPerWeek?: number | null;
+  kmPerMonth?: number | null;
+  stops?: BookingStop[];
   message: string | null;
   providerNotes: string | null;
   createdAt: string;
@@ -489,11 +547,78 @@ export interface BookingRequest {
     name: string;
     avatarUrl: string | null;
     phone: string | null;
+    // The driver card (A86), on the customer's responses only — optional for
+    // an older backend. Word them "Identity verified" / "Licence verified",
+    // never "safe".
+    identityVerified?: boolean;
+    licenceVerified?: boolean;
+    // The driver's public rating across their CNIC identity (A24).
+    rating?: { average: number | null; count: number };
+    // Completed rental jobs as the assigned driver + carpool trips they drove.
+    rideCount?: number;
   } | null;
   // The driver's answer to the job: PENDING / ACCEPTED / DECLINED, null when
   // no driver is assigned.
   driverJobStatus?: 'PENDING' | 'ACCEPTED' | 'DECLINED' | null;
 }
+
+// ─── Rental request estimate (POST /booking-requests/estimate, A77, A78) ────
+
+// A priced package and how the route fits it (A80). DAY's durationQuantity is
+// the fewest days the driving needs (at most 6).
+export interface RentalPackageFit {
+  durationType: RentalDurationType;
+  durationQuantity: number;
+  fits: boolean;
+  // Hour packages: the package minus the time needed. Days: 10 h × days minus
+  // the driving. Negative when it doesn't fit.
+  spareMinutes: number;
+  endsAt: string;
+  // Round trip only: what the package leaves at the destination after both drives.
+  timeAtDestinationMinutes: number | null;
+}
+
+export interface RentalPackageChoice {
+  durationType: RentalDurationType;
+  durationQuantity: number;
+}
+
+export interface BookingEstimate {
+  vehicleId: string;
+  tripType: BookingTripType;
+  requestedFromDate: string;
+  route: {
+    distanceKm: number;
+    drivingMinutes: number;
+    timeNeededMinutes: number;
+    // Round trip: the last drop-off back through the pickups (inside the totals).
+    wayBack: { distanceKm: number; durationMinutes: number } | null;
+    // The stops in route order — no ids (nothing is stored).
+    stops: Omit<BookingStop, 'id'>[];
+  };
+  // Each priced package the car offers, shortest first.
+  packages: RentalPackageFit[];
+  // The smallest package the car offers that fits; null = too long for every one.
+  suggestion: RentalPackageChoice | null;
+  // How the package sent with the estimate fits; null when none was sent.
+  selected: RentalPackageFit | null;
+}
+
+// Error codes (body.error.code) of POST /booking-requests and /estimate.
+export const BookingErrorCode = {
+  /** 400 — `error.details { suggestion, distanceKm, drivingMinutes, timeNeededMinutes }`. */
+  ROUTE_DOES_NOT_FIT: 'ROUTE_DOES_NOT_FIT',
+  /** 400 — "Choose a pickup time in the future." */
+  START_TIME_PAST: 'START_TIME_PAST',
+  /** 400 — not ≥1 pickup and ≥1 drop-off with coordinates, or more than 10 stops. */
+  STOPS_INVALID: 'STOPS_INVALID',
+  /** 400 — Google found no route through the stops. */
+  ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
+  /** 503 — Google couldn't be reached; try again. */
+  ROUTE_UNAVAILABLE: 'ROUTE_UNAVAILABLE',
+  /** 400 — the old place fields sent together with stops (never sent by this app). */
+  OLD_REQUEST_SHAPE: 'OLD_REQUEST_SHAPE',
+} as const;
 
 // ─── Live location (customer sharing + rental live driver) ──────────────────
 // kerayego-backend live-location contract (2026-10-29). The backend alone
